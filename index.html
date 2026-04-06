@@ -10,6 +10,7 @@
 <title>Health Dashboard</title>
 <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+<script crossorigin src="https://cdn.jsdelivr.net/npm/recharts@2.12.7/umd/Recharts.js"></script>
 
 <style>
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -24,7 +25,7 @@ input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
 </head>
 <body>
 <div id="root"><div style="display:flex;align-items:center;justify-content:center;height:100vh;color:#14b8a6;font-size:16px">Loading dashboard...</div></div>
-<script>window.onerror=function(m,u,l){document.getElementById("root").innerHTML='<div style="padding:20px;color:#f43f5e;font-size:14px;line-height:1.6"><b>Error:</b><br>'+m+'<br><br>Line: '+l+'<br><br>Make sure you have internet for first load (CDN scripts).</div>';}</script>
+<script>window.onerror=function(m,u,l){if(m==="Script error."&&l===0)return;document.getElementById("root").innerHTML='<div style="padding:20px;color:#f43f5e;font-size:14px;line-height:1.6"><b>Error:</b><br>'+m+'<br><br>Line: '+l+'<br><br>Make sure you have internet for first load (CDN scripts).</div>';}</script>
 <script type="text/javascript">
 const {useState,useEffect,useRef,useCallback}=React;
 // Recharts loaded dynamically in TrendsTab - accessed via window.Recharts
@@ -309,23 +310,12 @@ function TodayTab({data,setData,supps,setSupps,addMeal,addReading}){
 // ============================================================
 function TrendsTab({history}){
   const [ch,setCh]=useState("glucose");
-  const [ready,setReady]=useState(!!window.Recharts);
-  
-  useEffect(()=>{
-    if(window.Recharts){setReady(true);return}
-    var s=document.createElement("script");
-    s.src="https://cdn.jsdelivr.net/npm/recharts@2.12.7/umd/Recharts.js";
-    s.onload=()=>setReady(true);
-    s.onerror=()=>{};
-    document.head.appendChild(s);
-  },[]);
 
-  const charts=[{id:"glucose",l:"Fasting Glucose"},{id:"sleepG",l:"Sleep vs Glucose"},{id:"bp",l:"Blood Pressure"},{id:"pulse",l:"Pulse+Alcohol"},{id:"macros",l:"Protein/Fiber"},{id:"weight",l:"Weight"},{id:"exercise",l:"Exercise"},{id:"sugar",l:"Added Sugar"}];
+  var charts=[{id:"glucose",l:"Fasting Glucose"},{id:"sleepG",l:"Sleep vs Glucose"},{id:"bp",l:"Blood Pressure"},{id:"pulse",l:"Pulse+Alcohol"},{id:"macros",l:"Protein/Fiber"},{id:"weight",l:"Weight"},{id:"exercise",l:"Exercise"},{id:"sugar",l:"Added Sugar"}];
 
-  if(!ready||!window.Recharts)return React.createElement("div",{style:{padding:"12px 16px 100px"}},
+  if(!window.Recharts)return React.createElement("div",{style:{padding:"12px 16px 100px"}},
     React.createElement("div",{style:{background:C.card,borderRadius:12,padding:20,textAlign:"center",color:C.dim,fontSize:13}},
-      React.createElement("div",{style:{marginBottom:8}},"📊 Loading charts..."),
-      React.createElement("div",{style:{fontSize:11}},"Downloading charting library. Make sure you have internet.")
+      "Charts unavailable. Refresh the page with internet connection."
     )
   );
 
