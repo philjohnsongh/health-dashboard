@@ -8,9 +8,10 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#0f172a">
 <title>Health Dashboard</title>
-<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
-<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
-<script crossorigin src="https://cdn.jsdelivr.net/npm/recharts@2.12.7/umd/Recharts.js"></script>
+<script crossorigin="anonymous" src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+<script crossorigin="anonymous" src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+<script crossorigin="anonymous" src="https://cdnjs.cloudflare.com/ajax/libs/prop-types/15.8.1/prop-types.min.js"></script>
+<script crossorigin="anonymous" src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js" onerror="window._rechartsErr=true"></script>
 
 <style>
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -315,7 +316,12 @@ function TrendsTab({history}){
 
   if(!window.Recharts)return React.createElement("div",{style:{padding:"12px 16px 100px"}},
     React.createElement("div",{style:{background:C.card,borderRadius:12,padding:20,textAlign:"center",color:C.dim,fontSize:13}},
-      "Charts unavailable. Refresh the page with internet connection."
+      React.createElement("div",{style:{marginBottom:8}},"📊 Charts unavailable"),
+      React.createElement("div",{style:{fontSize:11,marginBottom:12}},"The charting library failed to load."),
+      React.createElement("div",{style:{fontSize:10,color:C.rose,textAlign:"left",fontFamily:"monospace",background:C.bg,padding:10,borderRadius:8}},
+        "React: "+(window.React?"✓":"✗")+"\nReactDOM: "+(window.ReactDOM?"✓":"✗")+"\nprop-types: "+(window.PropTypes?"✓":"✗")+"\nRecharts: "+(window.Recharts?"✓":"✗")+"\nLoad error: "+(window._rechartsErr?"yes":"no")+"\nURL: "+window.location.href
+      ),
+      React.createElement("button",{onClick:function(){window.location.reload()},style:{marginTop:12,background:C.teal,border:"none",borderRadius:8,padding:"8px 16px",color:"#fff",fontSize:12,cursor:"pointer"}},"Refresh Page")
     )
   );
 
