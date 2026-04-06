@@ -116,6 +116,84 @@ const fmtD=d=>{const dt=new Date(d+"T12:00:00");return dt.toLocaleDateString("en
 const predictG=(sl,st,as,al,ex)=>{let g=90;if(sl<6)g+=13;else if(sl<7)g+=8;else if(sl<7.5)g+=5;else if(sl<8)g+=2;g+=Math.min((st||4)-2,5);g+=Math.min(Math.max((as||0)-10,0)/4,5);g+=Math.min((al||0)*2.5,8);if(ex)g-=7;return Math.round(g)};
 
 // ============================================================
+// AI MEAL ANALYSIS (Priority 1 — v2)
+// ============================================================
+// Sends text or photo to Claude Sonnet, returns array of nutrition items.
+// Uses Phil's stored foodref + profile so estimates match his actual products.
+const MEAL_SYSTEM=`You are a nutrition analyst for a health tracking app. The user will describe a meal (text) or send a photo (of food or a nutrition label). You must return ONLY a valid JSON object in this exact format, with no prose, no markdown fences, no explanation:
+
+{"items":[{"n":"item name","cal":0,"p":0,"ep":0,"ca":0,"fi":0,"as":0,"su":0,"fa":0,"sf":0,"na":0,"k":0,"note":"optional match note"}],"notes":"optional overall caveats"}
+
+Field definitions (all numeric, per the portion actually consumed):
+- n: short item name
+- cal: calories (kcal)
+- p: protein grams (raw)
+- ep: effective protein grams (collagen counts at 50%, everything else = p)
+- ca: carbohydrates grams (total)
+- fi: fiber grams
+- as: added sugar grams (NOT total sugar — only added)
+- su: total sugars grams
+- fa: fat grams (total)
+- sf: saturated fat grams
+- na: sodium mg
+- k: potassium mg
+- note: short string if you matched to a known product, made an assumption, or flagged a trap
+
+Rules:
+1. If the user's description matches a known product in the FOOD REFERENCE below, use those exact values and set "note":"matched: <product>".
+2. If unsure about portion, assume one standard serving and say so in note.
+3. Multiple items in one meal → multiple entries in the items array.
+4. If the input is a photo of a nutrition label, extract values from the label (respect serving size — ask yourself: did the user eat one serving or the whole container? If unclear, assume one serving and note it).
+5. If the input is a photo of food, estimate from visible portions.
+6. Added sugar: if a product has added sugar you know about (dressings, sauces, yogurt), include it. Default to 0 only if you're confident there's none.
+7. Effective protein (ep): collagen peptides = 50% of raw. Whey/meat/dairy/eggs/legumes = 100%. Mixed → weighted.
+8. Return ONLY the JSON object. No backticks. No prose.`;
+
+async function analyzeMeal({text,imageB64,imageMedia}){
+  const key=LS.get("api_key");
+  if(!key)throw new Error("No API key. Set one in Settings.");
+  const profile=DB.get("profile")||"";
+  const foodref=DB.get("foodref")||"";
+  const sys=MEAL_SYSTEM+"\n\n=== USER PROFILE ===\n"+profile+"\n\n=== FOOD REFERENCE (known products) ===\n"+(foodref||"(no food reference loaded — make best-effort estimates)");
+  const userContent=[];
+  if(imageB64){
+    userContent.push({type:"image",source:{type:"base64",media_type:imageMedia||"image/jpeg",data:imageB64}});
+  }
+  userContent.push({type:"text",text:text||"Analyze this meal and return the JSON."});
+  const body={model:"claude-sonnet-4-20250514",max_tokens:1500,system:sys,messages:[{role:"user",content:userContent}]};
+  const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify(body)});
+  const d=await r.json();
+  if(d.error)throw new Error(d.error.message||"API error");
+  let raw="";
+  if(d.content&&Array.isArray(d.content)){raw=d.content.filter(b=>b.type==="text").map(b=>b.text).join("\n")}
+  raw=raw.replace(/```json|```/g,"").trim();
+  // Extract the first JSON object if the model added any stray text
+  const m=raw.match(/\{[\s\S]*\}/);
+  if(!m)throw new Error("Could not parse AI response: "+raw.slice(0,200));
+  let parsed;
+  try{parsed=JSON.parse(m[0])}catch(e){throw new Error("Invalid JSON from AI: "+e.message)}
+  if(!parsed.items||!Array.isArray(parsed.items))throw new Error("AI response missing items array");
+  // Normalize: ensure all numeric fields present
+  const fields=["cal","p","ep","ca","fi","as","su","fa","sf","na","k"];
+  parsed.items=parsed.items.map(it=>{
+    const clean={n:it.n||"Item",note:it.note||""};
+    fields.forEach(f=>{clean[f]=typeof it[f]==="number"?it[f]:(parseFloat(it[f])||0)});
+    if(!it.ep&&it.p)clean.ep=clean.p;
+    return clean;
+  });
+  return parsed;
+}
+
+function fileToBase64(file){
+  return new Promise((res,rej)=>{
+    const r=new FileReader();
+    r.onload=()=>{const s=r.result;const i=s.indexOf(",");res({data:s.slice(i+1),media:file.type||"image/jpeg"})};
+    r.onerror=()=>rej(new Error("Could not read file"));
+    r.readAsDataURL(file);
+  });
+}
+
+// ============================================================
 // SMALL COMPONENTS
 // ============================================================
 function Metric({label,value,unit,target,isMax,color}){
@@ -158,6 +236,45 @@ function Btn({children,onClick,color,outline,style:s}){
 }
 
 // ============================================================
+// AI MEAL PREVIEW (editable nutrition card before logging)
+// ============================================================
+function AIMealPreview({items,notes,onConfirm,onCancel}){
+  const [rows,setRows]=useState(items);
+  const fields=[["cal","cal"],["p","prot"],["ep","eff p"],["ca","carb"],["fi","fib"],["as","add sg"],["su","tot sg"],["fa","fat"],["sf","sat"],["na","Na"],["k","K"]];
+  const update=(i,f,v)=>{const n=[...rows];n[i]={...n[i],[f]:parseFloat(v)||0};setRows(n)};
+  const updateName=(i,v)=>{const n=[...rows];n[i]={...n[i],n:v};setRows(n)};
+  const remove=i=>setRows(rows.filter((_,j)=>j!==i));
+  const totals=rows.reduce((a,r)=>{fields.forEach(([f])=>{a[f]=(a[f]||0)+(r[f]||0)});return a},{});
+  return React.createElement("div",{style:{background:C.card2,borderRadius:12,padding:14,border:`2px solid ${C.purp}`,marginTop:10}},
+    React.createElement("div",{style:{fontSize:15,fontWeight:700,color:C.purp,marginBottom:4,display:"flex",alignItems:"center",gap:6}},"✨ AI Nutrition Estimate"),
+    React.createElement("div",{style:{fontSize:12,color:C.dim,marginBottom:10}},"Review and edit before logging. Tap any number to change it."),
+    notes&&React.createElement("div",{style:{fontSize:12,color:C.amber,marginBottom:8,padding:"6px 8px",background:C.amber+"15",borderRadius:6}},"ℹ️ "+notes),
+    rows.length===0&&React.createElement("div",{style:{color:C.dim,fontSize:13,padding:10,textAlign:"center"}},"All items removed."),
+    rows.map((r,i)=>React.createElement("div",{key:i,style:{background:C.card,borderRadius:8,padding:10,marginBottom:8,border:`1px solid ${C.bdr}`}},
+      React.createElement("div",{style:{display:"flex",gap:6,alignItems:"center",marginBottom:6}},
+        React.createElement("input",{value:r.n,onChange:e=>updateName(i,e.target.value),
+          style:{flex:1,background:C.card2,border:`1px solid ${C.bdr}`,borderRadius:6,padding:"8px 10px",color:C.txt,fontSize:14,outline:"none"}}),
+        React.createElement("button",{onClick:()=>remove(i),style:{background:"none",border:"none",color:C.rose,fontSize:18,cursor:"pointer",padding:"4px 8px"}},"✕")
+      ),
+      r.note&&React.createElement("div",{style:{fontSize:11,color:C.dim,marginBottom:6,fontStyle:"italic"}},r.note),
+      React.createElement("div",{style:{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:4}},
+        fields.map(([f,lbl])=>React.createElement("div",{key:f,style:{display:"flex",flexDirection:"column",alignItems:"center"}},
+          React.createElement("div",{style:{fontSize:10,color:C.dim,marginBottom:2}},lbl),
+          React.createElement("input",{type:"number",value:r[f]||0,onChange:e=>update(i,f,e.target.value),
+            style:{width:"100%",background:C.card2,border:`1px solid ${C.bdr}`,borderRadius:4,padding:"6px 4px",color:C.txt,fontSize:13,outline:"none",textAlign:"center",fontFamily:"monospace"}})
+        ))
+      )
+    )),
+    rows.length>1&&React.createElement("div",{style:{fontSize:12,color:C.dim,padding:"6px 10px",background:C.card,borderRadius:6,marginBottom:10,fontFamily:"monospace"}},
+      `TOTAL: ${Math.round(totals.cal)}cal • ${Math.round(totals.p)}p • ${Math.round(totals.ca)}c • ${Math.round(totals.fi)}fi • ${Math.round(totals.as)}as • ${Math.round(totals.na)}Na`),
+    React.createElement("div",{style:{display:"flex",gap:8}},
+      React.createElement(Btn,{onClick:()=>onConfirm(rows),color:C.grn,style:{flex:1,justifyContent:"center"}},["✓ Log All"]),
+      React.createElement(Btn,{onClick:onCancel,outline:true,color:C.dim},["Cancel"])
+    )
+  );
+}
+
+// ============================================================
 // TODAY TAB
 // ============================================================
 function TodayTab({data,setData,supps,setSupps,addMeal,addReading}){
@@ -168,6 +285,10 @@ function TodayTab({data,setData,supps,setSupps,addMeal,addReading}){
   const [wv,setWv]=useState("");const [mt,setMt]=useState("");
   const [sq,setSq]=useState(false);const [av,setAv]=useState("");
   const [recording,setRecording]=useState(false);
+  const [aiLoading,setAiLoading]=useState(false);
+  const [aiPreview,setAiPreview]=useState(null);
+  const [aiError,setAiError]=useState("");
+  const photoInputRef=useRef(null);
   const recognitionRef=useRef(null);
   const pending=SUPPS.filter(s=>!supps[s.id]);
   const calT=data.ex?2000:1800;
@@ -181,6 +302,28 @@ function TodayTab({data,setData,supps,setSupps,addMeal,addReading}){
     rec.onerror=function(){setRecording(false)};
     rec.onend=function(){setRecording(false)};
     recognitionRef.current=rec;rec.start();setRecording(true);
+  };
+
+  const doAIAnalyze=async(opts)=>{
+    setAiError("");setAiLoading(true);setAiPreview(null);
+    try{
+      const result=await analyzeMeal(opts);
+      if(!result.items||result.items.length===0){setAiError("AI returned no items. Try rephrasing or add more detail.");}
+      else setAiPreview(result);
+    }catch(e){setAiError(e.message||"Analysis failed")}
+    setAiLoading(false);
+  };
+  const analyzeText=()=>{if(!mt.trim()){setAiError("Describe the meal first (type or speak).");return}doAIAnalyze({text:mt.trim()})};
+  const analyzePhoto=async(file)=>{
+    if(!file)return;
+    try{
+      const {data,media}=await fileToBase64(file);
+      doAIAnalyze({text:mt.trim()||"Analyze this meal photo.",imageB64:data,imageMedia:media});
+    }catch(e){setAiError(e.message)}
+  };
+  const confirmAI=(rows)=>{
+    rows.forEach(r=>addMeal(r));
+    setAiPreview(null);setMt("");setAiError("");
   };
 
   const save=(type,vals)=>{addReading({type,...vals});setEt(null);setGv("");setGt("");setBs("");setBd("");setBp("");setSh("");setSc("");setWv("");setAv("")};
@@ -295,16 +438,22 @@ function TodayTab({data,setData,supps,setSupps,addMeal,addReading}){
           React.createElement("span",null,m.n),React.createElement("span",{style:{color:C.dim}},`${m.cal}cal/${m.p}g`)
         ))
       ),
-      React.createElement("textarea",{value:mt,onChange:e=>setMt(e.target.value),placeholder:"Describe meal by typing or tap the mic button to speak...",rows:3,
+      React.createElement("textarea",{value:mt,onChange:e=>setMt(e.target.value),placeholder:"Describe the meal (type, speak, or snap a photo)...",rows:3,
         style:{width:"100%",background:C.card2,border:`1px solid ${recording?C.rose:C.bdr}`,borderRadius:8,padding:14,color:C.txt,fontSize:17,resize:"none",outline:"none",boxSizing:"border-box",fontFamily:"inherit"}}),
-      React.createElement("div",{style:{display:"flex",gap:8,marginTop:10}},
-        React.createElement(Btn,{onClick:startVoice,color:recording?C.rose:C.purp},recording?["⏹ Stop Recording"]:["🎤 Speak Meal"]),
-        React.createElement(Btn,{onClick:()=>{if(mt){addMeal({n:mt,estimated:true});setMt("")}}},["📝 Log"]),
+      React.createElement("div",{style:{display:"flex",gap:6,marginTop:10,flexWrap:"wrap"}},
+        React.createElement(Btn,{onClick:startVoice,color:recording?C.rose:C.purp,style:{flex:"1 1 auto"}},recording?["⏹ Stop"]:["🎤 Speak"]),
+        React.createElement(Btn,{onClick:()=>photoInputRef.current&&photoInputRef.current.click(),color:C.blue,style:{flex:"1 1 auto"}},["📷 Photo"]),
+        React.createElement(Btn,{onClick:analyzeText,color:C.teal,style:{flex:"1 1 100%",justifyContent:"center"}},aiLoading?["⏳ Analyzing..."]:["✨ Analyze with AI"])
       ),
+      React.createElement("input",{type:"file",accept:"image/*",capture:"environment",ref:photoInputRef,style:{display:"none"},
+        onChange:e=>{const f=e.target.files&&e.target.files[0];if(f){analyzePhoto(f);e.target.value=""}}}),
       recording&&React.createElement("div",{style:{fontSize:15,color:C.rose,marginTop:10,display:"flex",alignItems:"center",gap:6}},
         React.createElement("span",{style:{display:"inline-block",width:10,height:10,borderRadius:5,background:C.rose,animation:"pulse 1s infinite"}}),
         "Listening... speak your meal description"
-      )
+      ),
+      aiLoading&&React.createElement("div",{style:{fontSize:14,color:C.teal,marginTop:10,textAlign:"center",padding:10,background:C.teal+"15",borderRadius:8}},"✨ AI analyzing nutrition..."),
+      aiError&&React.createElement("div",{style:{fontSize:13,color:C.rose,marginTop:10,padding:10,background:C.rose+"15",borderRadius:8,border:`1px solid ${C.rose}40`}},"⚠️ "+aiError),
+      aiPreview&&React.createElement(AIMealPreview,{items:aiPreview.items,notes:aiPreview.notes,onConfirm:confirmAI,onCancel:()=>setAiPreview(null)})
     ),
 
     // Today's readings summary
@@ -526,6 +675,7 @@ function ChatDrawer({open,onClose,data,history}){
 function SettingsTab({history,setHistory}){
   const [hasKey,setHasKey]=useState(!!LS.get("api_key"));
   const [hasProfile,setHasProfile]=useState(!!DB.get("profile"));
+  const [hasFoodref,setHasFoodref]=useState(!!DB.get("foodref"));
   const [hasSyncKey,setHasSyncKey]=useState(!!getSyncKey());
   const [syncKeyInput,setSyncKeyInput]=useState("");
   const [hasHist,setHasHist]=useState(history.length>0);
@@ -545,10 +695,14 @@ function SettingsTab({history,setHistory}){
         DB.set("profile",data.profile);
         setHasProfile(true);
       }
+      if(data.foodref){
+        DB.set("foodref",data.foodref);
+        setHasFoodref(true);
+      }
       setStatus("✓ Data imported! Pushing to cloud...");
       // Auto-push to Firebase if sync key exists
       var sk=getSyncKey();
-      if(sk){try{var pushData={};if(data.history)pushData.history=data.history;if(data.profile)pushData.profile=data.profile;await fetch(FB_URL+"/users/"+sk+".json",{method:"PATCH",body:JSON.stringify(pushData)});setStatus("✓ Data imported and synced to cloud!")}catch(e){setStatus("✓ Imported locally. Cloud sync failed: "+e.message)}}
+      if(sk){try{var pushData={};if(data.history)pushData.history=data.history;if(data.profile)pushData.profile=data.profile;if(data.foodref)pushData.foodref=data.foodref;await fetch(FB_URL+"/users/"+sk+".json",{method:"PATCH",body:JSON.stringify(pushData)});setStatus("✓ Data imported and synced to cloud!")}catch(e){setStatus("✓ Imported locally. Cloud sync failed: "+e.message)}}
       else{setStatus("✓ Data imported locally. Set a sync key to sync to cloud.")}
       setImportText("");
       setShowImport(false);
@@ -557,7 +711,7 @@ function SettingsTab({history,setHistory}){
   };
 
   const doExportAll=()=>{
-    const exp={history:history,profile:DB.get("profile")||"",today:DB.get("today_"+todayStr())};
+    const exp={history:history,profile:DB.get("profile")||"",foodref:DB.get("foodref")||"",today:DB.get("today_"+todayStr())};
     var t=JSON.stringify(exp,null,2);
     navigator.clipboard.writeText(t).then(()=>{setStatus("✓ All data copied to clipboard");setTimeout(()=>setStatus(""),3000)});
   };
@@ -572,8 +726,8 @@ function SettingsTab({history,setHistory}){
         React.createElement("div",{style:{fontSize:14,color:C.grn,marginBottom:8}},"✓ Syncing with key: "+getSyncKey()),
         React.createElement("div",{style:{fontSize:13,color:C.dim,marginBottom:8}},"Use the same sync key on your other devices to keep data in sync."),
         React.createElement("div",{style:{display:"flex",gap:8,flexWrap:"wrap"}},
-          React.createElement(Btn,{onClick:async()=>{var sk=getSyncKey();setStatus("Pushing to cloud... (key: "+sk+")");try{var data={};var h=LS.get("history");if(h)data.history=h;var p=LS.get("profile");if(p)data.profile=p;var t=LS.get("today_"+todayStr());if(t)data["today_"+todayStr()]=t;var s=LS.get("supps_"+todayStr());if(s)data["supps_"+todayStr()]=s;await fetch(FB_URL+"/users/"+sk+".json",{method:"PUT",body:JSON.stringify(data)});setStatus("✓ Pushed to cloud! "+(data.history?data.history.length:0)+" days of history uploaded.")}catch(err){setStatus("❌ Error: "+err.message)}setTimeout(()=>setStatus(""),6000)},color:C.grn,style:{fontSize:14}},["⬆ Push to Cloud"]),
-          React.createElement(Btn,{onClick:async()=>{var sk=getSyncKey();setStatus("Pulling from cloud... (key: "+sk+")");try{var url=FB_URL+"/users/"+sk+".json";var resp=await fetch(url);var r=await resp.json();if(r&&typeof r==="object"&&Object.keys(r).length>0){var count=0;if(r.history){setHistory(r.history);LS.set("history",r.history);setHasHist(true);count=r.history.length}if(r.profile){LS.set("profile",r.profile);setHasProfile(true)}setStatus("✓ Synced! "+count+" days of history loaded.")}else{setStatus("⚠ No data found at key: "+sk+". Make sure you used the same passphrase on both devices.")}}catch(err){setStatus("❌ Error: "+err.message)}setTimeout(()=>setStatus(""),6000)},color:C.blue,style:{fontSize:14}},["⬇ Pull from Cloud"]),
+          React.createElement(Btn,{onClick:async()=>{var sk=getSyncKey();setStatus("Pushing to cloud... (key: "+sk+")");try{var data={};var h=LS.get("history");if(h)data.history=h;var p=LS.get("profile");if(p)data.profile=p;var fr=LS.get("foodref");if(fr)data.foodref=fr;var t=LS.get("today_"+todayStr());if(t)data["today_"+todayStr()]=t;var s=LS.get("supps_"+todayStr());if(s)data["supps_"+todayStr()]=s;await fetch(FB_URL+"/users/"+sk+".json",{method:"PUT",body:JSON.stringify(data)});setStatus("✓ Pushed to cloud! "+(data.history?data.history.length:0)+" days of history uploaded.")}catch(err){setStatus("❌ Error: "+err.message)}setTimeout(()=>setStatus(""),6000)},color:C.grn,style:{fontSize:14}},["⬆ Push to Cloud"]),
+          React.createElement(Btn,{onClick:async()=>{var sk=getSyncKey();setStatus("Pulling from cloud... (key: "+sk+")");try{var url=FB_URL+"/users/"+sk+".json";var resp=await fetch(url);var r=await resp.json();if(r&&typeof r==="object"&&Object.keys(r).length>0){var count=0;if(r.history){setHistory(r.history);LS.set("history",r.history);setHasHist(true);count=r.history.length}if(r.profile){LS.set("profile",r.profile);setHasProfile(true)}if(r.foodref){LS.set("foodref",r.foodref);setHasFoodref(true)}setStatus("✓ Synced! "+count+" days of history loaded.")}else{setStatus("⚠ No data found at key: "+sk+". Make sure you used the same passphrase on both devices.")}}catch(err){setStatus("❌ Error: "+err.message)}setTimeout(()=>setStatus(""),6000)},color:C.blue,style:{fontSize:14}},["⬇ Pull from Cloud"]),
           React.createElement(Btn,{onClick:()=>{if(confirm("Remove sync key? Data stays on this device but stops syncing.")){localStorage.removeItem("ph_sync_key");setHasSyncKey(false)}},color:C.rose,outline:true,style:{fontSize:14}},["Disconnect"])
         )
       ):React.createElement("div",null,
@@ -590,14 +744,15 @@ function SettingsTab({history,setHistory}){
       React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:6}},
         React.createElement("div",{style:{fontSize:14,color:hasHist?C.grn:C.amber}},hasHist?`✓ ${history.length} days of history loaded`:"⚠ No historical data — import below"),
         React.createElement("div",{style:{fontSize:14,color:hasProfile?C.grn:C.amber}},hasProfile?"✓ Health profile loaded":"⚠ No health profile — import below"),
-        React.createElement("div",{style:{fontSize:14,color:hasKey?C.grn:C.dim}},hasKey?"✓ API key saved":"○ No API key (AI chat disabled)")
+        React.createElement("div",{style:{fontSize:14,color:hasFoodref?C.grn:C.amber}},hasFoodref?"✓ Food reference loaded (AI meal analysis enabled)":"⚠ No food reference — AI meal estimates will be less accurate"),
+        React.createElement("div",{style:{fontSize:14,color:hasKey?C.grn:C.dim}},hasKey?"✓ API key saved":"○ No API key (AI chat + meal analysis disabled)")
       )
     ),
 
     // Import
     React.createElement("div",{style:{background:C.card,borderRadius:10,padding:14,border:`1px solid ${C.bdr}`}},
       React.createElement("div",{style:{fontSize:16,fontWeight:600,marginBottom:8}},"Import Data"),
-      React.createElement("div",{style:{fontSize:13,color:C.dim,marginBottom:10,lineHeight:1.5}},'Paste the JSON data from your Claude conversation. It should contain {"history":[...],"profile":"..."}.'),
+      React.createElement("div",{style:{fontSize:13,color:C.dim,marginBottom:10,lineHeight:1.5}},'Paste JSON with any of: {"history":[...], "profile":"...", "foodref":"..."}. The foodref is a markdown/text blob describing your known products — it powers AI meal analysis.'),
       !showImport&&React.createElement(Btn,{onClick:()=>setShowImport(true),color:C.teal},["📥 Import Data"]),
       showImport&&React.createElement("div",null,
         React.createElement("textarea",{value:importText,onChange:e=>setImportText(e.target.value),placeholder:'Paste JSON here...',rows:6,
@@ -669,6 +824,7 @@ function App(){
           if(remote["supps_"+todayStr()])setSupps(remote["supps_"+todayStr()]);
           if(remote.history&&remote.history.length>0){setHistory(remote.history);LS.set("history",remote.history)}
           if(remote.profile)LS.set("profile",remote.profile);
+          if(remote.foodref)LS.set("foodref",remote.foodref);
         }
       }
     })();
