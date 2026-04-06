@@ -19,9 +19,11 @@ body{background:#0f172a;color:#f1f5f9;font-family:-apple-system,BlinkMacSystemFo
 #root{min-height:100vh}
 input,textarea,select{font-family:inherit}
 input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
 ::-webkit-scrollbar{width:4px}
 ::-webkit-scrollbar-track{background:#1e293b}
 ::-webkit-scrollbar-thumb{background:#475569;border-radius:4px}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
 </style>
 </head>
 <body>
@@ -120,39 +122,39 @@ function Metric({label,value,unit,target,isMax,color}){
   const over=isMax&&value>target;const under=!isMax&&target&&value<target;
   const c=over?C.rose:under?C.amber:color||C.teal;
   const pct=target?Math.min((value/target)*100,110):null;
-  return React.createElement("div",{style:{background:C.card,borderRadius:10,padding:"10px 12px",borderLeft:`3px solid ${c}`}},
-    React.createElement("div",{style:{fontSize:11,color:C.dim,marginBottom:2}},label),
-    React.createElement("div",{style:{display:"flex",alignItems:"baseline",gap:4}},
-      React.createElement("span",{style:{fontSize:22,fontWeight:700,color:c,fontFamily:"monospace"}},value!=null?Math.round(value):"—"),
-      unit&&React.createElement("span",{style:{fontSize:11,color:C.dim}},unit),
-      target&&React.createElement("span",{style:{fontSize:10,color:C.dim,marginLeft:"auto"}},`/ ${target}${isMax?" max":""}`)
+  return React.createElement("div",{style:{background:C.card,borderRadius:14,padding:"16px 16px",borderLeft:`4px solid ${c}`}},
+    React.createElement("div",{style:{fontSize:15,color:C.dim,marginBottom:5}},label),
+    React.createElement("div",{style:{display:"flex",alignItems:"baseline",gap:6}},
+      React.createElement("span",{style:{fontSize:34,fontWeight:700,color:c,fontFamily:"monospace"}},value!=null?Math.round(value):"—"),
+      unit&&React.createElement("span",{style:{fontSize:14,color:C.dim}},unit),
+      target&&React.createElement("span",{style:{fontSize:13,color:C.dim,marginLeft:"auto"}},`/ ${target}${isMax?" max":""}`)
     ),
-    pct!=null&&React.createElement("div",{style:{height:3,background:C.card2,borderRadius:2,marginTop:6}},
-      React.createElement("div",{style:{height:3,background:c,borderRadius:2,width:`${Math.min(pct,100)}%`,transition:"width 0.5s"}}))
+    pct!=null&&React.createElement("div",{style:{height:4,background:C.card2,borderRadius:2,marginTop:8}},
+      React.createElement("div",{style:{height:4,background:c,borderRadius:2,width:`${Math.min(pct,100)}%`,transition:"width 0.5s"}}))
   );
 }
 
 function SuppCard({s,done,onTap}){
-  return React.createElement("div",{onClick:onTap,style:{background:done?C.card2:C.card,borderRadius:10,padding:"10px 12px",border:`1px solid ${done?C.grn+"60":C.bdr}`,cursor:"pointer",opacity:done?0.65:1,display:"flex",alignItems:"center",gap:10}},
-    React.createElement("div",{style:{width:28,height:28,borderRadius:14,background:done?C.grn:C.card2,display:"flex",alignItems:"center",justifyContent:"center",fontSize:done?14:16,flexShrink:0,color:done?"#fff":undefined}},done?"✓":s.icon),
+  return React.createElement("div",{onClick:onTap,style:{background:done?C.card2:C.card,borderRadius:12,padding:"14px 14px",border:`1px solid ${done?C.grn+"60":C.bdr}`,cursor:"pointer",opacity:done?0.65:1,display:"flex",alignItems:"center",gap:12}},
+    React.createElement("div",{style:{width:36,height:36,borderRadius:18,background:done?C.grn:C.card2,display:"flex",alignItems:"center",justifyContent:"center",fontSize:done?18:20,flexShrink:0,color:done?"#fff":undefined}},done?"✓":s.icon),
     React.createElement("div",{style:{flex:1,minWidth:0}},
-      React.createElement("div",{style:{fontSize:13,fontWeight:600,color:done?C.dim:C.txt}},s.name),
-      React.createElement("div",{style:{fontSize:10,color:C.dim}},s.time)
+      React.createElement("div",{style:{fontSize:15,fontWeight:600,color:done?C.dim:C.txt}},s.name),
+      React.createElement("div",{style:{fontSize:13,color:C.dim}},s.time)
     )
   );
 }
 
 function Inp({label,value,onChange,placeholder,unit,type}){
-  return React.createElement("div",{style:{display:"flex",alignItems:"center",gap:8,padding:"6px 0"}},
-    React.createElement("span",{style:{fontSize:12,color:C.dim,width:75,flexShrink:0}},label),
+  return React.createElement("div",{style:{display:"flex",alignItems:"center",gap:10,padding:"8px 0"}},
+    React.createElement("span",{style:{fontSize:15,color:C.dim,width:85,flexShrink:0}},label),
     React.createElement("input",{type:type||"number",value:value,onChange:e=>onChange(e.target.value),placeholder:placeholder,
-      style:{flex:1,background:C.card2,border:`1px solid ${C.bdr}`,borderRadius:8,padding:"8px 10px",color:C.txt,fontSize:14,outline:"none",fontFamily:"monospace"}}),
-    unit&&React.createElement("span",{style:{fontSize:11,color:C.dim,width:35,flexShrink:0}},unit)
+      style:{flex:1,background:C.card2,border:`1px solid ${C.bdr}`,borderRadius:10,padding:"12px 14px",color:C.txt,fontSize:17,outline:"none",fontFamily:"monospace"}}),
+    unit&&React.createElement("span",{style:{fontSize:13,color:C.dim,width:45,flexShrink:0}},unit)
   );
 }
 
 function Btn({children,onClick,color,outline,style:s}){
-  return React.createElement("button",{onClick,style:{background:outline?"transparent":(color||C.teal),color:outline?(color||C.teal):"#fff",border:outline?`1px solid ${color||C.teal}`:"none",borderRadius:8,padding:"10px 16px",fontSize:13,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:6,...s}},children);
+  return React.createElement("button",{onClick,style:{background:outline?"transparent":(color||C.teal),color:outline?(color||C.teal):"#fff",border:outline?`1px solid ${color||C.teal}`:"none",borderRadius:10,padding:"14px 20px",fontSize:15,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:8,...s}},children);
 }
 
 // ============================================================
@@ -165,24 +167,37 @@ function TodayTab({data,setData,supps,setSupps,addMeal,addReading}){
   const [sh,setSh]=useState("");const [sc,setSc]=useState("");
   const [wv,setWv]=useState("");const [mt,setMt]=useState("");
   const [sq,setSq]=useState(false);const [av,setAv]=useState("");
+  const [recording,setRecording]=useState(false);
+  const recognitionRef=useRef(null);
   const pending=SUPPS.filter(s=>!supps[s.id]);
   const calT=data.ex?2000:1800;
+
+  const startVoice=()=>{
+    var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+    if(!SR){alert("Speech recognition not supported in this browser. Use Chrome.");return}
+    if(recording&&recognitionRef.current){recognitionRef.current.stop();setRecording(false);return}
+    var rec=new SR();rec.continuous=true;rec.interimResults=true;rec.lang="en-US";
+    rec.onresult=function(e){var t="";for(var i=0;i<e.results.length;i++){t+=e.results[i][0].transcript}setMt(t)};
+    rec.onerror=function(){setRecording(false)};
+    rec.onend=function(){setRecording(false)};
+    recognitionRef.current=rec;rec.start();setRecording(true);
+  };
 
   const save=(type,vals)=>{addReading({type,...vals});setEt(null);setGv("");setGt("");setBs("");setBd("");setBp("");setSh("");setSc("");setWv("");setAv("")};
 
   const els=[
     // Supplement reminders
     pending.length>0&&React.createElement("div",{key:"supp"},
-      React.createElement("div",{style:{fontSize:12,fontWeight:600,color:C.amber,marginBottom:6}},`⏰ SUPPLEMENTS REMAINING (${pending.length})`),
+      React.createElement("div",{style:{fontSize:15,fontWeight:600,color:C.amber,marginBottom:6}},`⏰ SUPPLEMENTS REMAINING (${pending.length})`),
       React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}},
         pending.map(s=>React.createElement(SuppCard,{key:s.id,s,done:false,onTap:()=>setSupps(p=>({...p,[s.id]:true}))}))
       )
     ),
-    pending.length===0&&React.createElement("div",{key:"suppdone",style:{background:C.grn+"20",border:`1px solid ${C.grn}40`,borderRadius:10,padding:"8px 12px",fontSize:12,color:C.grn,textAlign:"center"}},"✓ All supplements taken today"),
+    pending.length===0&&React.createElement("div",{key:"suppdone",style:{background:C.grn+"20",border:`1px solid ${C.grn}40`,borderRadius:10,padding:"12px 14px",fontSize:15,color:C.grn,textAlign:"center"}},"✓ All supplements taken today"),
 
     // Daily totals
     React.createElement("div",{key:"totals"},
-      React.createElement("div",{style:{fontSize:12,fontWeight:600,color:C.dim,marginBottom:6}},"TODAY'S TOTALS"),
+      React.createElement("div",{style:{fontSize:15,fontWeight:600,color:C.dim,marginBottom:6}},"TODAY'S TOTALS"),
       React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}},
         React.createElement(Metric,{label:"Calories",value:data.cal,target:calT}),
         React.createElement(Metric,{label:"Protein (raw)",value:data.p,target:110,unit:"g"}),
@@ -197,24 +212,24 @@ function TodayTab({data,setData,supps,setSupps,addMeal,addReading}){
 
     // Glucose prediction
     data.sl!=null&&React.createElement("div",{key:"pred",style:{background:C.purp+"15",border:`1px solid ${C.purp}40`,borderRadius:10,padding:"10px 12px"}},
-      React.createElement("div",{style:{fontSize:11,color:C.purp,fontWeight:600}},"🔮 TOMORROW'S GLUCOSE PREDICTION"),
-      React.createElement("div",{style:{fontSize:24,fontWeight:700,color:C.purp,fontFamily:"monospace"}},"~"+predictG(data.sl,data.st,data.as,data.al,data.ex)),
-      React.createElement("div",{style:{fontSize:10,color:C.dim}},`Sleep ${data.sl}hr, ${data.al||0} drinks${data.al>0?" ⚠️":""}, ${data.as||0}g sugar, ${data.ex?"exercised ✓":"rest day"}`)
+      React.createElement("div",{style:{fontSize:16,color:C.purp,fontWeight:600}},"🔮 TOMORROW'S GLUCOSE PREDICTION"),
+      React.createElement("div",{style:{fontSize:36,fontWeight:700,color:C.purp,fontFamily:"monospace"}},"~"+predictG(data.sl,data.st,data.as,data.al,data.ex)),
+      React.createElement("div",{style:{fontSize:13,color:C.dim}},`Sleep ${data.sl}hr, ${data.al||0} drinks${data.al>0?" ⚠️":""}, ${data.as||0}g sugar, ${data.ex?"exercised ✓":"rest day"}`)
     ),
 
     // Entry buttons
     React.createElement("div",{key:"btns"},
-      React.createElement("div",{style:{fontSize:12,fontWeight:600,color:C.dim,marginBottom:6}},"LOG DATA"),
+      React.createElement("div",{style:{fontSize:15,fontWeight:600,color:C.dim,marginBottom:6}},"LOG DATA"),
       React.createElement("div",{style:{display:"flex",flexWrap:"wrap",gap:6}},
         [["glucose","🩸 Glucose"],["bp","💓 BP"],["sleep","😴 Sleep"],["stress","🧠 Stress"],["weight","⚖️ Weight"],["meal","🍽️ Meal"],["exercise","💪 Exercise"],["alcohol","🍺 Alcohol"]].map(([k,l])=>
-          React.createElement("button",{key:k,onClick:()=>setEt(et===k?null:k),style:{background:et===k?C.teal:C.card,color:et===k?"#fff":C.txt,border:`1px solid ${et===k?C.teal:C.bdr}`,borderRadius:20,padding:"8px 14px",fontSize:12,fontWeight:500,cursor:"pointer"}},l)
+          React.createElement("button",{key:k,onClick:()=>setEt(et===k?null:k),style:{background:et===k?C.teal:C.card,color:et===k?"#fff":C.txt,border:`1px solid ${et===k?C.teal:C.bdr}`,borderRadius:20,padding:"10px 16px",fontSize:14,fontWeight:500,cursor:"pointer"}},l)
         )
       )
     ),
 
     // Glucose form
     et==="glucose"&&React.createElement("div",{key:"f_g",style:{background:C.card,borderRadius:12,padding:14,border:`1px solid ${C.bdr}`}},
-      React.createElement("div",{style:{fontSize:13,fontWeight:600,marginBottom:8}},"Log Glucose"),
+      React.createElement("div",{style:{fontSize:16,fontWeight:600,marginBottom:10}},"Log Glucose"),
       React.createElement(Inp,{label:"Reading",value:gv,onChange:setGv,placeholder:"96",unit:"mg/dL"}),
       React.createElement(Inp,{label:"Time",value:gt,onChange:setGt,type:"text",placeholder:"9:10 AM"}),
       React.createElement(Btn,{onClick:()=>{if(gv){setData(p=>({...p,g:+gv}));save("glucose",{v:+gv,t:gt})}}},["Save"])
@@ -222,7 +237,7 @@ function TodayTab({data,setData,supps,setSupps,addMeal,addReading}){
 
     // BP form
     et==="bp"&&React.createElement("div",{key:"f_bp",style:{background:C.card,borderRadius:12,padding:14,border:`1px solid ${C.bdr}`}},
-      React.createElement("div",{style:{fontSize:13,fontWeight:600,marginBottom:8}},"Log Blood Pressure"),
+      React.createElement("div",{style:{fontSize:16,fontWeight:600,marginBottom:10}},"Log Blood Pressure"),
       React.createElement(Inp,{label:"Systolic",value:bs,onChange:setBs,placeholder:"105",unit:"mmHg"}),
       React.createElement(Inp,{label:"Diastolic",value:bd,onChange:setBd,placeholder:"72",unit:"mmHg"}),
       React.createElement(Inp,{label:"Pulse",value:bp,onChange:setBp,placeholder:"67",unit:"bpm"}),
@@ -231,7 +246,7 @@ function TodayTab({data,setData,supps,setSupps,addMeal,addReading}){
 
     // Sleep form
     et==="sleep"&&React.createElement("div",{key:"f_sl",style:{background:C.card,borderRadius:12,padding:14,border:`1px solid ${C.bdr}`}},
-      React.createElement("div",{style:{fontSize:13,fontWeight:600,marginBottom:8}},"Log Sleep"),
+      React.createElement("div",{style:{fontSize:16,fontWeight:600,marginBottom:10}},"Log Sleep"),
       React.createElement(Inp,{label:"Duration",value:sh,onChange:setSh,placeholder:"8.25",unit:"hrs"}),
       React.createElement(Inp,{label:"Score",value:sc,onChange:setSc,placeholder:"91"}),
       React.createElement(Btn,{onClick:()=>{if(sh){setData(p=>({...p,sl:+sh,ss:sc?+sc:null}));save("sleep",{h:+sh,sc:sc?+sc:null})}}},["Save"])
@@ -239,11 +254,11 @@ function TodayTab({data,setData,supps,setSupps,addMeal,addReading}){
 
     // Stress form
     et==="stress"&&React.createElement("div",{key:"f_st",style:{background:C.card,borderRadius:12,padding:14,border:`1px solid ${C.bdr}`}},
-      React.createElement("div",{style:{fontSize:13,fontWeight:600,marginBottom:8}},"Waking Stress (1-5)"),
+      React.createElement("div",{style:{fontSize:16,fontWeight:600,marginBottom:10}},"Waking Stress (1-5)"),
       React.createElement("div",{style:{display:"flex",gap:6,flexWrap:"wrap"}},
         [1,1.5,2,2.5,3,3.5,4,4.5,5].map(v=>
           React.createElement("button",{key:v,onClick:()=>{setData(p=>({...p,st:v}));save("stress",{v})},
-            style:{flex:"1 0 auto",minWidth:36,padding:"10px 6px",background:v<=2?C.grn+"30":v<=3.5?C.amber+"30":C.rose+"30",border:`1px solid ${C.bdr}`,borderRadius:8,color:C.txt,fontSize:12,fontWeight:600,cursor:"pointer"}},v)
+            style:{flex:"1 0 auto",minWidth:42,padding:"16px 10px",background:v<=2?C.grn+"30":v<=3.5?C.amber+"30":C.rose+"30",border:`1px solid ${C.bdr}`,borderRadius:10,color:C.txt,fontSize:16,fontWeight:700,cursor:"pointer"}},v)
         )
       )
     ),
@@ -256,9 +271,9 @@ function TodayTab({data,setData,supps,setSupps,addMeal,addReading}){
 
     // Alcohol form
     et==="alcohol"&&React.createElement("div",{key:"f_al",style:{background:C.card,borderRadius:12,padding:14,border:`1px solid ${C.bdr}`}},
-      React.createElement("div",{style:{fontSize:13,fontWeight:600,marginBottom:8}},"Log Alcohol"),
+      React.createElement("div",{style:{fontSize:16,fontWeight:600,marginBottom:10}},"Log Alcohol"),
       React.createElement(Inp,{label:"Std Drinks",value:av,onChange:setAv,placeholder:"2.45"}),
-      React.createElement("div",{style:{fontSize:10,color:C.dim,marginBottom:8}},"16oz 9.2% beer = 2.45 std drinks. Note: finish by 6:45 PM!"),
+      React.createElement("div",{style:{fontSize:13,color:C.dim,marginBottom:10}},"16oz 9.2% beer = 2.45 std drinks. Note: finish by 6:45 PM!"),
       React.createElement(Btn,{onClick:()=>{if(av){setData(p=>({...p,al:(p.al||0)+ +av}));save("alcohol",{v:+av})}}},["Save"])
     ),
 
@@ -272,31 +287,36 @@ function TodayTab({data,setData,supps,setSupps,addMeal,addReading}){
 
     // Meal entry
     et==="meal"&&React.createElement("div",{key:"f_meal",style:{background:C.card,borderRadius:12,padding:14,border:`1px solid ${C.bdr}`}},
-      React.createElement("div",{style:{fontSize:13,fontWeight:600,marginBottom:8}},"Log Meal"),
-      React.createElement("button",{onClick:()=>setSq(!sq),style:{background:C.card2,border:`1px solid ${C.bdr}`,borderRadius:8,padding:"8px 12px",color:C.teal,fontSize:12,cursor:"pointer",width:"100%",textAlign:"left",marginBottom:8}},`⚡ Quick-Pick Items ${sq?"▲":"▼"}`),
+      React.createElement("div",{style:{fontSize:16,fontWeight:600,marginBottom:10}},"Log Meal"),
+      React.createElement("button",{onClick:()=>setSq(!sq),style:{background:C.card2,border:`1px solid ${C.bdr}`,borderRadius:8,padding:"12px 14px",color:C.teal,fontSize:14,cursor:"pointer",width:"100%",textAlign:"left",marginBottom:8}},`⚡ Quick-Pick Items ${sq?"▲":"▼"}`),
       sq&&React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:4,marginBottom:10,maxHeight:200,overflowY:"auto"}},
         QMEALS.map(m=>React.createElement("button",{key:m.id,onClick:()=>{addMeal(m);setSq(false)},
-          style:{background:C.bg,border:`1px solid ${C.bdr}`,borderRadius:8,padding:"8px 10px",color:C.txt,fontSize:12,cursor:"pointer",textAlign:"left",display:"flex",justifyContent:"space-between"}},
+          style:{background:C.bg,border:`1px solid ${C.bdr}`,borderRadius:8,padding:"14px 16px",color:C.txt,fontSize:16,cursor:"pointer",textAlign:"left",display:"flex",justifyContent:"space-between"}},
           React.createElement("span",null,m.n),React.createElement("span",{style:{color:C.dim}},`${m.cal}cal/${m.p}g`)
         ))
       ),
-      React.createElement("textarea",{value:mt,onChange:e=>setMt(e.target.value),placeholder:"Describe meal...",rows:3,
-        style:{width:"100%",background:C.card2,border:`1px solid ${C.bdr}`,borderRadius:8,padding:10,color:C.txt,fontSize:13,resize:"none",outline:"none",boxSizing:"border-box",fontFamily:"inherit"}}),
-      React.createElement("div",{style:{display:"flex",gap:8,marginTop:8}},
-        React.createElement(Btn,{onClick:()=>{if(mt){addMeal({n:mt,estimated:true});setMt("")}}},["📝 Log Text"])
+      React.createElement("textarea",{value:mt,onChange:e=>setMt(e.target.value),placeholder:"Describe meal by typing or tap the mic button to speak...",rows:3,
+        style:{width:"100%",background:C.card2,border:`1px solid ${recording?C.rose:C.bdr}`,borderRadius:8,padding:14,color:C.txt,fontSize:17,resize:"none",outline:"none",boxSizing:"border-box",fontFamily:"inherit"}}),
+      React.createElement("div",{style:{display:"flex",gap:8,marginTop:10}},
+        React.createElement(Btn,{onClick:startVoice,color:recording?C.rose:C.purp},recording?["⏹ Stop Recording"]:["🎤 Speak Meal"]),
+        React.createElement(Btn,{onClick:()=>{if(mt){addMeal({n:mt,estimated:true});setMt("")}}},["📝 Log"]),
+      ),
+      recording&&React.createElement("div",{style:{fontSize:15,color:C.rose,marginTop:10,display:"flex",alignItems:"center",gap:6}},
+        React.createElement("span",{style:{display:"inline-block",width:10,height:10,borderRadius:5,background:C.rose,animation:"pulse 1s infinite"}}),
+        "Listening... speak your meal description"
       )
     ),
 
     // Today's readings summary
     React.createElement("div",{key:"readings",style:{background:C.card,borderRadius:12,padding:14,border:`1px solid ${C.bdr}`}},
-      React.createElement("div",{style:{fontSize:13,fontWeight:600,marginBottom:8}},"TODAY'S READINGS"),
+      React.createElement("div",{style:{fontSize:16,fontWeight:600,marginBottom:10}},"TODAY'S READINGS"),
       React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}},
         [["Glucose",data.g,"mg/dL",C.teal],["BP",data.bs?`${data.bs}/${data.bd}`:"—","",C.blue],["Pulse",data.pu,"bpm",C.purp],
          ["Sleep",data.sl,"hrs",C.amber],["Stress",data.st,"/5",C.rose],["Weight",data.wt,"lbs",C.grn]].map(([l,v,u,c])=>
-          React.createElement("div",{key:l,style:{textAlign:"center"}},
-            React.createElement("div",{style:{fontSize:10,color:C.dim}},l),
-            React.createElement("div",{style:{fontSize:16,fontWeight:700,color:v&&v!=="—"?c:C.dim,fontFamily:"monospace"}},v||"—"),
-            React.createElement("div",{style:{fontSize:9,color:C.dim}},u)
+          React.createElement("div",{key:l,style:{textAlign:"center",padding:"4px 0"}},
+            React.createElement("div",{style:{fontSize:15,color:C.dim}},l),
+            React.createElement("div",{style:{fontSize:28,fontWeight:700,color:v&&v!=="—"?c:C.dim,fontFamily:"monospace"}},v||"—"),
+            React.createElement("div",{style:{fontSize:14,color:C.dim}},u)
           )
         )
       )
@@ -321,7 +341,7 @@ function TrendsTab({history}){
       React.createElement("div",{style:{fontSize:10,color:C.rose,textAlign:"left",fontFamily:"monospace",background:C.bg,padding:10,borderRadius:8}},
         "React: "+(window.React?"✓":"✗")+"\nReactDOM: "+(window.ReactDOM?"✓":"✗")+"\nprop-types: "+(window.PropTypes?"✓":"✗")+"\nRecharts: "+(window.Recharts?"✓":"✗")+"\nLoad error: "+(window._rechartsErr?"yes":"no")+"\nURL: "+window.location.href
       ),
-      React.createElement("button",{onClick:function(){window.location.reload()},style:{marginTop:12,background:C.teal,border:"none",borderRadius:8,padding:"8px 16px",color:"#fff",fontSize:12,cursor:"pointer"}},"Refresh Page")
+      React.createElement("button",{onClick:function(){window.location.reload()},style:{marginTop:12,background:C.teal,border:"none",borderRadius:8,padding:"10px 20px",color:"#fff",fontSize:14,cursor:"pointer"}},"Refresh Page")
     )
   );
 
@@ -383,14 +403,14 @@ function AlertsTab({data}){
   return React.createElement("div",{style:{padding:"12px 16px 100px",display:"flex",flexDirection:"column",gap:8}},
     React.createElement("div",{style:{fontSize:14,fontWeight:700}},"Active Alerts"),
     alerts.filter(a=>!dis[a.id]).map(a=>React.createElement("div",{key:a.id,style:{background:a.c+"15",border:`1px solid ${a.c}40`,borderRadius:10,padding:"10px 12px",display:"flex",gap:10}},
-      React.createElement("div",{style:{flex:1,fontSize:12,lineHeight:1.5}},a.msg),
+      React.createElement("div",{style:{flex:1,fontSize:15,lineHeight:1.6}},a.msg),
       React.createElement("button",{onClick:()=>setDis(p=>({...p,[a.id]:true})),style:{background:"none",border:"none",color:C.dim,cursor:"pointer",fontSize:16}},"✕")
     )),
-    alerts.filter(a=>!dis[a.id]).length===0&&React.createElement("div",{style:{color:C.grn,fontSize:13,padding:12}},"✓ No active alerts"),
+    alerts.filter(a=>!dis[a.id]).length===0&&React.createElement("div",{style:{color:C.grn,fontSize:15,padding:14}},"✓ No active alerts"),
     React.createElement("div",{style:{fontSize:14,fontWeight:700,marginTop:12}},"Reminders"),
     rec.filter(r=>!dis[r.id]).map(r=>React.createElement("div",{key:r.id,style:{background:C.card,border:`1px solid ${C.bdr}`,borderRadius:10,padding:"10px 12px",display:"flex",gap:10}},
-      React.createElement("div",{style:{flex:1,fontSize:12,lineHeight:1.5}},r.msg),
-      React.createElement("button",{onClick:()=>setDis(p=>({...p,[r.id]:true})),style:{background:"none",border:"none",color:C.dim,cursor:"pointer",fontSize:11}},"pause")
+      React.createElement("div",{style:{flex:1,fontSize:15,lineHeight:1.6}},r.msg),
+      React.createElement("button",{onClick:()=>setDis(p=>({...p,[r.id]:true})),style:{background:"none",border:"none",color:C.dim,cursor:"pointer",fontSize:13}},"pause")
     ))
   );
 }
@@ -408,7 +428,7 @@ function ProtocolTab({supps,setSupps}){
       React.createElement("div",{style:{fontSize:14,fontWeight:700,marginBottom:8}},"Daily Targets"),
       React.createElement("div",{style:{background:C.card,borderRadius:10,padding:12}},
         [["Calories","1,800 rest / 2,000+ exercise"],["Protein","110-140g raw"],["Carbs","100-155g"],["Fiber","28g+"],["Added Sugar","<20g"],["Sodium","<2,300mg"],["Potassium",">3,000mg"]].map(([k,v])=>
-          React.createElement("div",{key:k,style:{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:`1px solid ${C.bdr}22`,fontSize:12}},
+          React.createElement("div",{key:k,style:{display:"flex",justifyContent:"space-between",padding:"10px 0",borderBottom:`1px solid ${C.bdr}22`,fontSize:15}},
             React.createElement("span",{style:{color:C.dim}},k),React.createElement("span",{style:{color:C.txt,fontWeight:600,fontFamily:"monospace"}},v)
           )
         )
@@ -418,7 +438,7 @@ function ProtocolTab({supps,setSupps}){
       React.createElement("div",{style:{fontSize:14,fontWeight:700,marginBottom:8}},"⚠️ Sodium Traps"),
       React.createElement("div",{style:{background:C.card,borderRadius:10,padding:12}},
         [["Jimmy John's sub","~1,500mg"],["Costco pizza slice","~1,370mg"],["Med Crunch full bag","1,190mg ⚠️+17.5g sugar"],["Amy's Enchiladas ×2","~987mg"],["Cedarlane soup/cup","690mg"],["Egg bites ×2","680mg"]].map(([k,v],i)=>
-          React.createElement("div",{key:i,style:{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.bdr}22`,fontSize:11}},
+          React.createElement("div",{key:i,style:{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:`1px solid ${C.bdr}22`,fontSize:14}},
             React.createElement("span",{style:{color:C.txt}},k),React.createElement("span",{style:{color:C.rose,fontWeight:600,fontFamily:"monospace"}},v)
           )
         )
@@ -438,9 +458,9 @@ function ExportTab({data,history}){
   const copy=(txt,id)=>{navigator.clipboard.writeText(txt).then(()=>{setCopied(id);setTimeout(()=>setCopied(null),2000)})};
   return React.createElement("div",{style:{padding:"12px 16px 100px",display:"flex",flexDirection:"column",gap:10}},
     React.createElement("div",{style:{fontSize:14,fontWeight:700}},"Export for Opus Conversation"),
-    React.createElement("div",{style:{fontSize:11,color:C.dim,lineHeight:1.5}},"Copy data to paste into your project conversation with Claude Opus."),
+    React.createElement("div",{style:{fontSize:14,color:C.dim,lineHeight:1.5}},"Copy data to paste into your project conversation with Claude Opus."),
     [["today","📋 Today's Summary",todayS],["week","📊 Last 7 Days",weekS],["full","📦 Full Data (JSON)",fullS]].map(([id,label,fn])=>
-      React.createElement("button",{key:id,onClick:()=>copy(fn(),id),style:{background:C.card,border:`1px solid ${copied===id?C.grn:C.bdr}`,borderRadius:10,padding:"12px 14px",color:copied===id?C.grn:C.txt,fontSize:13,cursor:"pointer",textAlign:"left",fontWeight:500}},copied===id?"✓ Copied!":label)
+      React.createElement("button",{key:id,onClick:()=>copy(fn(),id),style:{background:C.card,border:`1px solid ${copied===id?C.grn:C.bdr}`,borderRadius:12,padding:"16px 18px",color:copied===id?C.grn:C.txt,fontSize:13,cursor:"pointer",textAlign:"left",fontWeight:500}},copied===id?"✓ Copied!":label)
     )
   );
 }
@@ -482,19 +502,19 @@ function ChatDrawer({open,onClose,data,history}){
       React.createElement("button",{onClick:onClose,style:{background:"none",border:"none",color:C.dim,fontSize:20,cursor:"pointer"}},"✕")
     ),
     needKey&&React.createElement("div",{style:{padding:16}},
-      React.createElement("div",{style:{fontSize:13,fontWeight:600,marginBottom:8}},"Enter your Anthropic API Key"),
-      React.createElement("div",{style:{fontSize:11,color:C.dim,marginBottom:12,lineHeight:1.5}},"Your key is stored only on this device in localStorage. It never leaves your phone except to call the API."),
+      React.createElement("div",{style:{fontSize:16,fontWeight:600,marginBottom:10}},"Enter your Anthropic API Key"),
+      React.createElement("div",{style:{fontSize:13,color:C.dim,marginBottom:12,lineHeight:1.5}},"Your key is stored only on this device in localStorage. It never leaves your phone except to call the API."),
       React.createElement("input",{type:"password",placeholder:"sk-ant-...",id:"apiKeyInput",style:{width:"100%",background:C.card2,border:`1px solid ${C.bdr}`,borderRadius:8,padding:"10px 12px",color:C.txt,fontSize:14,outline:"none",boxSizing:"border-box",marginBottom:8}}),
       React.createElement(Btn,{onClick:()=>{const v=document.getElementById("apiKeyInput").value;if(v){LS.set("api_key",v);setNeedKey(false)}}},["Save Key"])
     ),
     !needKey&&React.createElement("div",{ref,style:{flex:1,overflowY:"auto",padding:16,display:"flex",flexDirection:"column",gap:10}},
-      msgs.length===0&&React.createElement("div",{style:{color:C.dim,fontSize:12,textAlign:"center",marginTop:40}},"Ask about your health data, protocol, or targets."),
-      msgs.map((m,i)=>React.createElement("div",{key:i,style:{alignSelf:m.role==="user"?"flex-end":"flex-start",background:m.role==="user"?C.teal:C.card,borderRadius:12,padding:"8px 12px",maxWidth:"85%",fontSize:13,lineHeight:1.5,whiteSpace:"pre-wrap"}},m.content)),
+      msgs.length===0&&React.createElement("div",{style:{color:C.dim,fontSize:15,textAlign:"center",marginTop:40}},"Ask about your health data, protocol, or targets."),
+      msgs.map((m,i)=>React.createElement("div",{key:i,style:{alignSelf:m.role==="user"?"flex-end":"flex-start",background:m.role==="user"?C.teal:C.card,borderRadius:12,padding:"8px 12px",maxWidth:"85%",fontSize:16,lineHeight:1.6,whiteSpace:"pre-wrap"}},m.content)),
       loading&&React.createElement("div",{style:{alignSelf:"flex-start",background:C.card,borderRadius:12,padding:"8px 12px",fontSize:13,color:C.dim}},"Thinking...")
     ),
     !needKey&&React.createElement("div",{style:{padding:"10px 16px",borderTop:`1px solid ${C.bdr}`,display:"flex",gap:8}},
       React.createElement("input",{value:inp,onChange:e=>setInp(e.target.value),onKeyDown:e=>e.key==="Enter"&&send(),placeholder:"Ask about your health...",
-        style:{flex:1,background:C.card2,border:`1px solid ${C.bdr}`,borderRadius:20,padding:"10px 14px",color:C.txt,fontSize:13,outline:"none"}}),
+        style:{flex:1,background:C.card2,border:`1px solid ${C.bdr}`,borderRadius:20,padding:"12px 16px",color:C.txt,fontSize:16,outline:"none"}}),
       React.createElement("button",{onClick:send,disabled:loading,style:{background:C.teal,border:"none",borderRadius:20,width:40,height:40,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",color:"#fff",fontSize:16}},"→")
     )
   );
@@ -547,17 +567,17 @@ function SettingsTab({history,setHistory}){
 
     // Sync Key
     React.createElement("div",{style:{background:C.card,borderRadius:10,padding:14,border:`1px solid ${hasSyncKey?C.grn+"60":C.amber+"60"}`}},
-      React.createElement("div",{style:{fontSize:13,fontWeight:600,marginBottom:6}},"☁️ Cloud Sync"),
+      React.createElement("div",{style:{fontSize:16,fontWeight:600,marginBottom:8}},"☁️ Cloud Sync"),
       hasSyncKey?React.createElement("div",null,
-        React.createElement("div",{style:{fontSize:12,color:C.grn,marginBottom:8}},"✓ Syncing with key: "+getSyncKey()),
-        React.createElement("div",{style:{fontSize:11,color:C.dim,marginBottom:8}},"Use the same sync key on your other devices to keep data in sync."),
+        React.createElement("div",{style:{fontSize:14,color:C.grn,marginBottom:8}},"✓ Syncing with key: "+getSyncKey()),
+        React.createElement("div",{style:{fontSize:13,color:C.dim,marginBottom:8}},"Use the same sync key on your other devices to keep data in sync."),
         React.createElement("div",{style:{display:"flex",gap:8,flexWrap:"wrap"}},
-          React.createElement(Btn,{onClick:async()=>{var sk=getSyncKey();setStatus("Pushing to cloud... (key: "+sk+")");try{var data={};var h=LS.get("history");if(h)data.history=h;var p=LS.get("profile");if(p)data.profile=p;var t=LS.get("today_"+todayStr());if(t)data["today_"+todayStr()]=t;var s=LS.get("supps_"+todayStr());if(s)data["supps_"+todayStr()]=s;await fetch(FB_URL+"/users/"+sk+".json",{method:"PUT",body:JSON.stringify(data)});setStatus("✓ Pushed to cloud! "+(data.history?data.history.length:0)+" days of history uploaded.")}catch(err){setStatus("❌ Error: "+err.message)}setTimeout(()=>setStatus(""),6000)},color:C.grn,style:{fontSize:12}},["⬆ Push to Cloud"]),
-          React.createElement(Btn,{onClick:async()=>{var sk=getSyncKey();setStatus("Pulling from cloud... (key: "+sk+")");try{var url=FB_URL+"/users/"+sk+".json";var resp=await fetch(url);var r=await resp.json();if(r&&typeof r==="object"&&Object.keys(r).length>0){var count=0;if(r.history){setHistory(r.history);LS.set("history",r.history);setHasHist(true);count=r.history.length}if(r.profile){LS.set("profile",r.profile);setHasProfile(true)}setStatus("✓ Synced! "+count+" days of history loaded.")}else{setStatus("⚠ No data found at key: "+sk+". Make sure you used the same passphrase on both devices.")}}catch(err){setStatus("❌ Error: "+err.message)}setTimeout(()=>setStatus(""),6000)},color:C.blue,style:{fontSize:12}},["⬇ Pull from Cloud"]),
-          React.createElement(Btn,{onClick:()=>{if(confirm("Remove sync key? Data stays on this device but stops syncing.")){localStorage.removeItem("ph_sync_key");setHasSyncKey(false)}},color:C.rose,outline:true,style:{fontSize:12}},["Disconnect"])
+          React.createElement(Btn,{onClick:async()=>{var sk=getSyncKey();setStatus("Pushing to cloud... (key: "+sk+")");try{var data={};var h=LS.get("history");if(h)data.history=h;var p=LS.get("profile");if(p)data.profile=p;var t=LS.get("today_"+todayStr());if(t)data["today_"+todayStr()]=t;var s=LS.get("supps_"+todayStr());if(s)data["supps_"+todayStr()]=s;await fetch(FB_URL+"/users/"+sk+".json",{method:"PUT",body:JSON.stringify(data)});setStatus("✓ Pushed to cloud! "+(data.history?data.history.length:0)+" days of history uploaded.")}catch(err){setStatus("❌ Error: "+err.message)}setTimeout(()=>setStatus(""),6000)},color:C.grn,style:{fontSize:14}},["⬆ Push to Cloud"]),
+          React.createElement(Btn,{onClick:async()=>{var sk=getSyncKey();setStatus("Pulling from cloud... (key: "+sk+")");try{var url=FB_URL+"/users/"+sk+".json";var resp=await fetch(url);var r=await resp.json();if(r&&typeof r==="object"&&Object.keys(r).length>0){var count=0;if(r.history){setHistory(r.history);LS.set("history",r.history);setHasHist(true);count=r.history.length}if(r.profile){LS.set("profile",r.profile);setHasProfile(true)}setStatus("✓ Synced! "+count+" days of history loaded.")}else{setStatus("⚠ No data found at key: "+sk+". Make sure you used the same passphrase on both devices.")}}catch(err){setStatus("❌ Error: "+err.message)}setTimeout(()=>setStatus(""),6000)},color:C.blue,style:{fontSize:14}},["⬇ Pull from Cloud"]),
+          React.createElement(Btn,{onClick:()=>{if(confirm("Remove sync key? Data stays on this device but stops syncing.")){localStorage.removeItem("ph_sync_key");setHasSyncKey(false)}},color:C.rose,outline:true,style:{fontSize:14}},["Disconnect"])
         )
       ):React.createElement("div",null,
-        React.createElement("div",{style:{fontSize:11,color:C.dim,marginBottom:10,lineHeight:1.5}},"Choose a sync passphrase. Use the same phrase on all your devices. Your data is stored at a private path derived from this phrase."),
+        React.createElement("div",{style:{fontSize:13,color:C.dim,marginBottom:10,lineHeight:1.5}},"Choose a sync passphrase. Use the same phrase on all your devices. Your data is stored at a private path derived from this phrase."),
         React.createElement("input",{type:"text",value:syncKeyInput,onChange:e=>setSyncKeyInput(e.target.value),placeholder:"e.g. my-health-2026",
           style:{width:"100%",background:C.card2,border:`1px solid ${C.bdr}`,borderRadius:8,padding:"10px 12px",color:C.txt,fontSize:14,outline:"none",boxSizing:"border-box",marginBottom:8}}),
         React.createElement(Btn,{onClick:()=>{if(syncKeyInput.trim().length>=4){var h=0;for(var i=0;i<syncKeyInput.length;i++){h=((h<<5)-h)+syncKeyInput.charCodeAt(i);h|=0}var key="u"+Math.abs(h).toString(36);LS.set("sync_key",key);setHasSyncKey(true);setStatus("✓ Sync key set! Now import your data or pull from cloud.");setTimeout(()=>setStatus(""),4000)}else{setStatus("Passphrase must be at least 4 characters")}},color:C.teal},["Set Sync Key"])
@@ -566,22 +586,22 @@ function SettingsTab({history,setHistory}){
 
     // Data status
     React.createElement("div",{style:{background:C.card,borderRadius:10,padding:14,border:`1px solid ${C.bdr}`}},
-      React.createElement("div",{style:{fontSize:13,fontWeight:600,marginBottom:10}},"Data Status"),
+      React.createElement("div",{style:{fontSize:16,fontWeight:600,marginBottom:10}},"Data Status"),
       React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:6}},
-        React.createElement("div",{style:{fontSize:12,color:hasHist?C.grn:C.amber}},hasHist?`✓ ${history.length} days of history loaded`:"⚠ No historical data — import below"),
-        React.createElement("div",{style:{fontSize:12,color:hasProfile?C.grn:C.amber}},hasProfile?"✓ Health profile loaded":"⚠ No health profile — import below"),
-        React.createElement("div",{style:{fontSize:12,color:hasKey?C.grn:C.dim}},hasKey?"✓ API key saved":"○ No API key (AI chat disabled)")
+        React.createElement("div",{style:{fontSize:14,color:hasHist?C.grn:C.amber}},hasHist?`✓ ${history.length} days of history loaded`:"⚠ No historical data — import below"),
+        React.createElement("div",{style:{fontSize:14,color:hasProfile?C.grn:C.amber}},hasProfile?"✓ Health profile loaded":"⚠ No health profile — import below"),
+        React.createElement("div",{style:{fontSize:14,color:hasKey?C.grn:C.dim}},hasKey?"✓ API key saved":"○ No API key (AI chat disabled)")
       )
     ),
 
     // Import
     React.createElement("div",{style:{background:C.card,borderRadius:10,padding:14,border:`1px solid ${C.bdr}`}},
-      React.createElement("div",{style:{fontSize:13,fontWeight:600,marginBottom:6}},"Import Data"),
-      React.createElement("div",{style:{fontSize:11,color:C.dim,marginBottom:10,lineHeight:1.5}},'Paste the JSON data from your Claude conversation. It should contain {"history":[...],"profile":"..."}.'),
+      React.createElement("div",{style:{fontSize:16,fontWeight:600,marginBottom:8}},"Import Data"),
+      React.createElement("div",{style:{fontSize:13,color:C.dim,marginBottom:10,lineHeight:1.5}},'Paste the JSON data from your Claude conversation. It should contain {"history":[...],"profile":"..."}.'),
       !showImport&&React.createElement(Btn,{onClick:()=>setShowImport(true),color:C.teal},["📥 Import Data"]),
       showImport&&React.createElement("div",null,
         React.createElement("textarea",{value:importText,onChange:e=>setImportText(e.target.value),placeholder:'Paste JSON here...',rows:6,
-          style:{width:"100%",background:C.card2,border:`1px solid ${C.bdr}`,borderRadius:8,padding:10,color:C.txt,fontSize:11,resize:"vertical",outline:"none",boxSizing:"border-box",fontFamily:"monospace",marginBottom:8}}),
+          style:{width:"100%",background:C.card2,border:`1px solid ${C.bdr}`,borderRadius:8,padding:10,color:C.txt,fontSize:14,resize:"vertical",outline:"none",boxSizing:"border-box",fontFamily:"monospace",marginBottom:8}}),
         React.createElement("div",{style:{display:"flex",gap:8}},
           React.createElement(Btn,{onClick:doImport,color:C.grn},["Import"]),
           React.createElement(Btn,{onClick:()=>{setShowImport(false);setImportText("")},outline:true,color:C.dim},["Cancel"])
@@ -591,31 +611,31 @@ function SettingsTab({history,setHistory}){
 
     // Export all
     React.createElement("div",{style:{background:C.card,borderRadius:10,padding:14,border:`1px solid ${C.bdr}`}},
-      React.createElement("div",{style:{fontSize:13,fontWeight:600,marginBottom:6}},"Export All Data"),
-      React.createElement("div",{style:{fontSize:11,color:C.dim,marginBottom:10,lineHeight:1.5}},"Copy all your health data to clipboard for backup or transfer to another device."),
+      React.createElement("div",{style:{fontSize:16,fontWeight:600,marginBottom:8}},"Export All Data"),
+      React.createElement("div",{style:{fontSize:13,color:C.dim,marginBottom:10,lineHeight:1.5}},"Copy all your health data to clipboard for backup or transfer to another device."),
       React.createElement(Btn,{onClick:doExportAll,color:C.blue},["📤 Export All to Clipboard"])
     ),
 
     // API Key
     React.createElement("div",{style:{background:C.card,borderRadius:10,padding:14,border:`1px solid ${C.bdr}`}},
-      React.createElement("div",{style:{fontSize:13,fontWeight:600,marginBottom:8}},"API Key"),
-      React.createElement("div",{style:{fontSize:11,color:C.dim,marginBottom:8}},hasKey?"Key saved on this device only.":"Enter your Anthropic API key for AI chat."),
+      React.createElement("div",{style:{fontSize:16,fontWeight:600,marginBottom:10}},"API Key"),
+      React.createElement("div",{style:{fontSize:14,color:C.dim,marginBottom:8}},hasKey?"Key saved on this device only.":"Enter your Anthropic API key for AI chat."),
       !hasKey&&React.createElement("div",null,
         React.createElement("input",{type:"password",placeholder:"sk-ant-...",id:"apiKeyInput2",
           style:{width:"100%",background:C.card2,border:`1px solid ${C.bdr}`,borderRadius:8,padding:"10px 12px",color:C.txt,fontSize:14,outline:"none",boxSizing:"border-box",marginBottom:8}}),
         React.createElement(Btn,{onClick:()=>{var v=document.getElementById("apiKeyInput2").value;if(v){LS.set("api_key",v);setHasKey(true);setStatus("✓ API key saved")}},color:C.teal},["Save Key"])
       ),
-      hasKey&&React.createElement(Btn,{onClick:()=>{localStorage.removeItem("ph_api_key");setHasKey(false)},color:C.rose,outline:true,style:{fontSize:12}},["Remove Key"])
+      hasKey&&React.createElement(Btn,{onClick:()=>{localStorage.removeItem("ph_api_key");setHasKey(false)},color:C.rose,outline:true,style:{fontSize:14}},["Remove Key"])
     ),
 
     // Clear data
     React.createElement("div",{style:{background:C.card,borderRadius:10,padding:14,border:`1px solid ${C.bdr}`}},
-      React.createElement("div",{style:{fontSize:13,fontWeight:600,marginBottom:8}},"Clear Data"),
-      React.createElement(Btn,{onClick:()=>{if(confirm("Clear ALL health data? Cannot be undone.")){Object.keys(localStorage).filter(k=>k.startsWith("ph_")).forEach(k=>localStorage.removeItem(k));setStatus("Data cleared. Refresh page.");setHasHist(false);setHasProfile(false)}},color:C.rose,outline:true,style:{fontSize:12}},["Clear All Data"])
+      React.createElement("div",{style:{fontSize:16,fontWeight:600,marginBottom:10}},"Clear Data"),
+      React.createElement(Btn,{onClick:()=>{if(confirm("Clear ALL health data? Cannot be undone.")){Object.keys(localStorage).filter(k=>k.startsWith("ph_")).forEach(k=>localStorage.removeItem(k));setStatus("Data cleared. Refresh page.");setHasHist(false);setHasProfile(false)}},color:C.rose,outline:true,style:{fontSize:14}},["Clear All Data"])
     ),
 
     // Status message
-    status&&React.createElement("div",{style:{background:status.startsWith("✓")?C.grn+"20":C.rose+"20",border:`1px solid ${status.startsWith("✓")?C.grn:C.rose}40`,borderRadius:10,padding:"10px 12px",fontSize:12,color:status.startsWith("✓")?C.grn:C.rose,textAlign:"center"}},status)
+    status&&React.createElement("div",{style:{background:status.startsWith("✓")?C.grn+"20":C.rose+"20",border:`1px solid ${status.startsWith("✓")?C.grn:C.rose}40`,borderRadius:10,padding:"12px 14px",fontSize:14,color:status.startsWith("✓")?C.grn:C.rose,textAlign:"center"}},status)
   );
 }
 
@@ -673,10 +693,10 @@ function App(){
     React.createElement("div",{style:{padding:"14px 16px 8px",borderBottom:`1px solid ${C.bdr}33`,flexShrink:0}},
       React.createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center"}},
         React.createElement("div",null,
-          React.createElement("div",{style:{fontSize:18,fontWeight:800,color:C.teal,letterSpacing:-0.5}},"HEALTH DASH"),
-          React.createElement("div",{style:{fontSize:11,color:C.dim}},new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"}))
+          React.createElement("div",{style:{fontSize:22,fontWeight:800,color:C.teal,letterSpacing:-0.5}},"HEALTH DASH"),
+          React.createElement("div",{style:{fontSize:14,color:C.dim}},new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"}))
         ),
-        React.createElement("button",{onClick:()=>setChatOpen(true),style:{background:C.teal,border:"none",borderRadius:20,padding:"8px 14px",color:"#fff",fontSize:12,fontWeight:600,cursor:"pointer"}},"💬 AI Chat")
+        React.createElement("button",{onClick:()=>setChatOpen(true),style:{background:C.teal,border:"none",borderRadius:20,padding:"10px 16px",color:"#fff",fontSize:14,fontWeight:600,cursor:"pointer"}},"💬 AI Chat")
       )
     ),
     // Content
@@ -691,8 +711,8 @@ function App(){
     // Tab bar - fixed at bottom
     React.createElement("div",{style:{position:"fixed",bottom:0,left:0,right:0,background:C.card,borderTop:`1px solid ${C.bdr}`,display:"flex",paddingBottom:24,paddingTop:6,zIndex:50,maxWidth:480,margin:"0 auto"}},
       tabs.map(t=>React.createElement("button",{key:t.id,onClick:()=>setTab(t.id),style:{flex:1,background:"none",border:"none",padding:"10px 2px 6px",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:2}},
-        React.createElement("span",{style:{fontSize:16}},t.i),
-        React.createElement("span",{style:{fontSize:9,fontWeight:tab===t.id?700:400,color:tab===t.id?C.teal:C.dim}},t.l)
+        React.createElement("span",{style:{fontSize:22}},t.i),
+        React.createElement("span",{style:{fontSize:12,fontWeight:tab===t.id?700:400,color:tab===t.id?C.teal:C.dim}},t.l)
       ))
     ),
     // Chat
