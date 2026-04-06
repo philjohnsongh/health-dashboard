@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0f172a">
+<title>Health Dashboard</title>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{background:#0f172a;color:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;overflow:hidden;height:100vh;height:100dvh}
+#root{height:100vh;height:100dvh}
+input,textarea,select{font-family:inherit}
+input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-track{background:#1e293b}
+::-webkit-scrollbar-thumb{background:#475569;border-radius:4px}
+</style>
+</head>
+<body>
+<div id="root"><div style="display:flex;align-items:center;justify-content:center;height:100vh;color:#14b8a6;font-size:16px">Loading dashboard...</div></div>
+<script>window.onerror=function(m,u,l){document.getElementById("root").innerHTML='<div style="padding:20px;color:#f43f5e;font-size:14px;line-height:1.6"><b>Error:</b><br>'+m+'<br><br>Line: '+l+'<br><br>Make sure you have internet for first load (CDN scripts).</div>';}</script>
+<script type="text/javascript">
+const {useState,useEffect,useRef,useCallback}=React;
+// Recharts loaded async - may not be available immediately
+var RC = window.Recharts || {};
+var LineChart=RC.LineChart,Line=RC.Line,BarChart=RC.BarChart,Bar=RC.Bar,XAxis=RC.XAxis,YAxis=RC.YAxis,CartesianGrid=RC.CartesianGrid,Tooltip=RC.Tooltip,ResponsiveContainer=RC.ResponsiveContainer,ScatterChart=RC.ScatterChart,Scatter=RC.Scatter,ReferenceLine=RC.ReferenceLine;
+var chartsReady = !!window.Recharts;
+
+// ============================================================
+// CONSTANTS
+// ============================================================
+const C={bg:"#0f172a",card:"#1e293b",card2:"#334155",bdr:"#475569",txt:"#f1f5f9",dim:"#94a3b8",teal:"#14b8a6",amber:"#f59e0b",rose:"#f43f5e",grn:"#22c55e",blue:"#3b82f6",purp:"#a78bfa"};
+
+const TARGETS={cal:{rest:1800,ex:2000},prot:{min:110,max:140},carbs:{min:100},fib:{min:28},as:{max:20},na:{max:2300},k:{min:3000}};
+
+const SUPPS=[
+{id:"am_shake",name:"Morning Shake",time:"~9 AM",icon:"☕",items:"Whey+Collagen+Psyllium+Flax+Milk"},
+{id:"am_vit",name:"Morning Vitamins",time:"w/ breakfast",icon:"💊",items:"C 500mg, D3, B12, Ritual"},
+{id:"mid_fib",name:"Between Meals Fiber",time:"~10 AM",icon:"🥛",items:"Psyllium+Acacia water (or Kefir+Momentous)"},
+{id:"minox",name:"Minoxidil",time:"AM post-shower",icon:"💆",items:"Topical (skip 24hr post-stamp)"},
+{id:"din_vit",name:"Dinner Vitamins",time:"w/ dinner",icon:"🐟",items:"Ritual, Fish Oil, Finasteride ⚠️"},
+{id:"bed",name:"Bedtime Stack",time:"~10 PM",icon:"🌙",items:"Mg 240mg, L-Serine 2g, Ashwagandha 600mg"},
+{id:"allergy",name:"Allergy Sequence",time:"before bed stack",icon:"🤧",items:"Rinse→Nasacort→Allegra→wait 20-30min"},
+];
+
+const QMEALS=[
+{id:"shake",n:"Morning Shake (standard)",cal:448,p:53.6,ep:44.1,ca:23,fi:8.8,as:1,su:14.4,fa:12.6,sf:6.3,na:316,k:563},
+{id:"oikos",n:"Oikos Protein Shake",cal:180,p:30,ep:30,ca:9,fi:6,as:0,su:1,fa:4,sf:2.5,na:240,k:370},
+{id:"fairlife",n:"Fairlife Nutrition Plan",cal:150,p:30,ep:30,ca:4,fi:1,as:0,su:2,fa:2.5,sf:1.5,na:230,k:460},
+{id:"yogurt",n:"Greek Yogurt + Berries",cal:210,p:16,ep:16,ca:18,fi:2,as:0,su:12,fa:9,sf:5,na:75,k:280},
+{id:"ban_nut",n:"Banana + Mixed Nuts (1oz)",cal:275,p:6.3,ep:6.3,ca:33,fi:5,as:0,su:15,fa:16,sf:2,na:86,k:592},
+{id:"chicken",n:"Chicken Breast Bites",cal:140,p:24,ep:24,ca:3,fi:0,as:0,su:0,fa:3.5,sf:0.5,na:400,k:470},
+{id:"nuts",n:"Mixed Nuts (1 oz)",cal:170,p:5,ep:5,ca:6,fi:2,as:0,su:1,fa:16,sf:2,na:85,k:170},
+{id:"kefir",n:"Lifeway Plain Kefir (1 cup)",cal:110,p:10,ep:10,ca:9,fi:0,as:0,su:9,fa:2.5,sf:1.5,na:125,k:380},
+{id:"coco",n:"Coconut Water (half bottle)",cal:60,p:0,ep:0,ca:14,fi:0,as:0,su:13,fa:0.5,sf:0,na:27,k:429},
+{id:"fiber",n:"Acacia + Psyllium Water",cal:35,p:0,ep:0,ca:9,fi:8.5,as:0,su:0,fa:0,sf:0,na:0,k:0},
+{id:"milk",n:"Whole Milk (8 oz)",cal:149,p:8,ep:8,ca:12,fi:0,as:0,su:12,fa:8,sf:4.9,na:105,k:300},
+];
+
+const HIST=[];
+// Historical data is imported via Settings tab — not stored in code
+
+const DEFAULT_PROFILE="Health tracking dashboard. Import your health profile via Settings > Import Data to enable personalized AI chat.";
+// Profile loaded from localStorage after import
+
+// ============================================================
+// STORAGE (localStorage)
+// ============================================================
+// ============================================================
+// STORAGE: localStorage (fast) + Firebase (sync)
+// ============================================================
+const FB_URL="https://health-dashboard-fb552-default-rtdb.firebaseio.com";
+const LS={
+  get(k){try{const v=localStorage.getItem("ph_"+k);return v?JSON.parse(v):null}catch{return null}},
+  set(k,v){try{localStorage.setItem("ph_"+k,JSON.stringify(v));return true}catch{return false}},
+};
+const getSyncKey=()=>LS.get("sync_key");
+const FB={
+  async get(k){
+    const sk=getSyncKey();if(!sk)return null;
+    try{const r=await fetch(`${FB_URL}/users/${sk}/${k}.json`);const d=await r.json();return d}catch{return null}
+  },
+  async set(k,v){
+    const sk=getSyncKey();if(!sk)return;
+    try{await fetch(`${FB_URL}/users/${sk}/${k}.json`,{method:"PUT",body:JSON.stringify(v)})}catch{}
+  },
+};
+// Dual write: localStorage (instant) + Firebase (async background)
+const DB={
+  get(k){return LS.get(k)},
+  set(k,v){LS.set(k,v);FB.set(k,v)},
+  async pull(k){
+    const remote=await FB.get(k);
+    if(remote!=null){LS.set(k,remote);return remote}
+    return LS.get(k);
+  },
+  async pullAll(){
+    const sk=getSyncKey();if(!sk)return null;
+    try{const r=await fetch(`${FB_URL}/users/${sk}.json`);const d=await r.json();return d}catch{return null}
+  },
+  async pushAll(data){
+    const sk=getSyncKey();if(!sk)return;
+    try{await fetch(`${FB_URL}/users/${sk}.json`,{method:"PUT",body:JSON.stringify(data)})}catch{}
+  }
+};
+
+const todayStr=()=>new Date().toISOString().split("T")[0];
+const fmtD=d=>{const dt=new Date(d+"T12:00:00");return dt.toLocaleDateString("en-US",{month:"short",day:"numeric"})};
+const predictG=(sl,st,as,al,ex)=>{let g=90;if(sl<6)g+=13;else if(sl<7)g+=8;else if(sl<7.5)g+=5;else if(sl<8)g+=2;g+=Math.min((st||4)-2,5);g+=Math.min(Math.max((as||0)-10,0)/4,5);g+=Math.min((al||0)*2.5,8);if(ex)g-=7;return Math.round(g)};
+
+// ============================================================
+// SMALL COMPONENTS
+// ============================================================
+function Metric({label,value,unit,target,isMax,color}){
+  const over=isMax&&value>target;const under=!isMax&&target&&value<target;
+  const c=over?C.rose:under?C.amber:color||C.teal;
+  const pct=target?Math.min((value/target)*100,110):null;
+  return React.createElement("div",{style:{background:C.card,borderRadius:10,padding:"10px 12px",borderLeft:`3px solid ${c}`}},
+    React.createElement("div",{style:{fontSize:11,color:C.dim,marginBottom:2}},label),
+    React.createElement("div",{style:{display:"flex",alignItems:"baseline",gap:4}},
+      React.createElement("span",{style:{fontSize:22,fontWeight:700,color:c,fontFamily:"monospace"}},value!=null?Math.round(value):"—"),
+      unit&&React.createElement("span",{style:{fontSize:11,color:C.dim}},unit),
+      target&&React.createElement("span",{style:{fontSize:10,color:C.dim,marginLeft:"auto"}},`/ ${target}${isMax?" max":""}`)
+    ),
+    pct!=null&&React.createElement("div",{style:{height:3,background:C.card2,borderRadius:2,marginTop:6}},
+      React.createElement("div",{style:{height:3,background:c,borderRadius:2,width:`${Math.min(pct,100)}%`,transition:"width 0.5s"}}))
+  );
+}
+
+function SuppCard({s,done,onTap}){
+  return React.createElement("div",{onClick:onTap,style:{background:done?C.card2:C.card,borderRadius:10,padding:"10px 12px",border:`1px solid ${done?C.grn+"60":C.bdr}`,cursor:"pointer",opacity:done?0.65:1,display:"flex",alignItems:"center",gap:10}},
+    React.createElement("div",{style:{width:28,height:28,borderRadius:14,background:done?C.grn:C.card2,display:"flex",alignItems:"center",justifyContent:"center",fontSize:done?14:16,flexShrink:0,color:done?"#fff":undefined}},done?"✓":s.icon),
+    React.createElement("div",{style:{flex:1,minWidth:0}},
+      React.createElement("div",{style:{fontSize:13,fontWeight:600,color:done?C.dim:C.txt}},s.name),
+      React.createElement("div",{style:{fontSize:10,color:C.dim}},s.time)
+    )
+  );
+}
+
+function Inp({label,value,onChange,placeholder,unit,type}){
+  return React.createElement("div",{style:{display:"flex",alignItems:"center",gap:8,padding:"6px 0"}},
+    React.createElement("span",{style:{fontSize:12,color:C.dim,width:75,flexShrink:0}},label),
+    React.createElement("input",{type:type||"number",value:value,onChange:e=>onChange(e.target.value),placeholder:placeholder,
+      style:{flex:1,background:C.card2,border:`1px solid ${C.bdr}`,borderRadius:8,padding:"8px 10px",color:C.txt,fontSize:14,outline:"none",fontFamily:"monospace"}}),
+    unit&&React.createElement("span",{style:{fontSize:11,color:C.dim,width:35,flexShrink:0}},unit)
+  );
+}
+
+function Btn({children,onClick,color,outline,style:s}){
+  return React.createElement("button",{onClick,style:{background:outline?"transparent":(color||C.teal),color:outline?(color||C.teal):"#fff",border:outline?`1px solid ${color||C.teal}`:"none",borderRadius:8,padding:"10px 16px",fontSize:13,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:6,...s}},children);
+}
+
+// ============================================================
+// TODAY TAB
+// ============================================================
+function TodayTab({data,setData,supps,setSupps,addMeal,addReading}){
+  const [et,setEt]=useState(null);
+  const [gv,setGv]=useState("");const [gt,setGt]=useState("");
+  const [bs,setBs]=useState("");const [bd,setBd]=useState("");const [bp,setBp]=useState("");
+  const [sh,setSh]=useState("");const [sc,setSc]=useState("");
+  const [wv,setWv]=useState("");const [mt,setMt]=useState("");
+  const [sq,setSq]=useState(false);const [av,setAv]=useState("");
+  const pending=SUPPS.filter(s=>!supps[s.id]);
+  const calT=data.ex?2000:1800;
+
+  const save=(type,vals)=>{addReading({type,...vals});setEt(null);setGv("");setGt("");setBs("");setBd("");setBp("");setSh("");setSc("");setWv("");setAv("")};
+
+  const els=[
+    // Supplement reminders
+    pending.length>0&&React.createElement("div",{key:"supp"},
+      React.createElement("div",{style:{fontSize:12,fontWeight:600,color:C.amber,marginBottom:6}},`⏰ SUPPLEMENTS REMAINING (${pending.length})`),
+      React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}},
+        pending.map(s=>React.createElement(SuppCard,{key:s.id,s,done:false,onTap:()=>setSupps(p=>({...p,[s.id]:true}))}))
+      )
+    ),
+    pending.length===0&&React.createElement("div",{key:"suppdone",style:{background:C.grn+"20",border:`1px solid ${C.grn}40`,borderRadius:10,padding:"8px 12px",fontSize:12,color:C.grn,textAlign:"center"}},"✓ All supplements taken today"),
+
+    // Daily totals
+    React.createElement("div",{key:"totals"},
+      React.createElement("div",{style:{fontSize:12,fontWeight:600,color:C.dim,marginBottom:6}},"TODAY'S TOTALS"),
+      React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}},
+        React.createElement(Metric,{label:"Calories",value:data.cal,target:calT}),
+        React.createElement(Metric,{label:"Protein (raw)",value:data.p,target:110,unit:"g"}),
+        React.createElement(Metric,{label:"Carbs",value:data.ca,target:100,unit:"g"}),
+        React.createElement(Metric,{label:"Fiber",value:data.fi,target:28,unit:"g"}),
+        React.createElement(Metric,{label:"Added Sugar",value:data.as,target:20,isMax:true,unit:"g"}),
+        React.createElement(Metric,{label:"Sodium",value:data.na,target:2300,isMax:true,unit:"mg"}),
+        React.createElement(Metric,{label:"Potassium",value:data.k,target:3000,unit:"mg"}),
+        React.createElement(Metric,{label:"Fat / Sat",value:data.fa,unit:`g / ${Math.round(data.sf||0)}g`})
+      )
+    ),
+
+    // Glucose prediction
+    data.sl!=null&&React.createElement("div",{key:"pred",style:{background:C.purp+"15",border:`1px solid ${C.purp}40`,borderRadius:10,padding:"10px 12px"}},
+      React.createElement("div",{style:{fontSize:11,color:C.purp,fontWeight:600}},"🔮 TOMORROW'S GLUCOSE PREDICTION"),
+      React.createElement("div",{style:{fontSize:24,fontWeight:700,color:C.purp,fontFamily:"monospace"}},"~"+predictG(data.sl,data.st,data.as,data.al,data.ex)),
+      React.createElement("div",{style:{fontSize:10,color:C.dim}},`Sleep ${data.sl}hr, ${data.al||0} drinks${data.al>0?" ⚠️":""}, ${data.as||0}g sugar, ${data.ex?"exercised ✓":"rest day"}`)
+    ),
+
+    // Entry buttons
+    React.createElement("div",{key:"btns"},
+      React.createElement("div",{style:{fontSize:12,fontWeight:600,color:C.dim,marginBottom:6}},"LOG DATA"),
+      React.createElement("div",{style:{display:"flex",flexWrap:"wrap",gap:6}},
+        [["glucose","🩸 Glucose"],["bp","💓 BP"],["sleep","😴 Sleep"],["stress","🧠 Stress"],["weight","⚖️ Weight"],["meal","🍽️ Meal"],["exercise","💪 Exercise"],["alcohol","🍺 Alcohol"]].map(([k,l])=>
+          React.createElement("button",{key:k,onClick:()=>setEt(et===k?null:k),style:{background:et===k?C.teal:C.card,color:et===k?"#fff":C.txt,border:`1px solid ${et===k?C.teal:C.bdr}`,borderRadius:20,padding:"8px 14px",fontSize:12,fontWeight:500,cursor:"pointer"}},l)
+        )
+      )
+    ),
+
+    // Glucose form
+    et==="glucose"&&React.createElement("div",{key:"f_g",style:{background:C.card,borderRadius:12,padding:14,border:`1px solid ${C.bdr}`}},
+      React.createElement("div",{style:{fontSize:13,fontWeight:600,marginBottom:8}},"Log Glucose"),
+      React.createElement(Inp,{label:"Reading",value:gv,onChange:setGv,placeholder:"96",unit:"mg/dL"}),
+      React.createElement(Inp,{label:"Time",value:gt,onChange:setGt,type:"text",placeholder:"9:10 AM"}),
+      React.createElement(Btn,{onClick:()=>{if(gv){setData(p=>({...p,g:+gv}));save("glucose",{v:+gv,t:gt})}}},["Save"])
+    ),
+
+    // BP form
+    et==="bp"&&React.createElement("div",{key:"f_bp",style:{background:C.card,borderRadius:12,padding:14,border:`1px solid ${C.bdr}`}},
+      React.createElement("div",{style:{fontSize:13,fontWeight:600,marginBottom:8}},"Log Blood Pressure"),
+      React.createElement(Inp,{label:"Systolic",value:bs,onChange:setBs,placeholder:"105",unit:"mmHg"}),
+      React.createElement(Inp,{label:"Diastolic",value:bd,onChange:setBd,placeholder:"72",unit:"mmHg"}),
+      React.createElement(Inp,{label:"Pulse",value:bp,onChange:setBp,placeholder:"67",unit:"bpm"}),
+      React.createElement(Btn,{onClick:()=>{if(bs&&bd){setData(p=>({...p,bs:+bs,bd:+bd,pu:+bp}));save("bp",{s:+bs,d:+bd,p:+bp})}}},["Save"])
+    ),
+
+    // Sleep form
+    et==="sleep"&&React.createElement("div",{key:"f_sl",style:{background:C.card,borderRadius:12,padding:14,border:`1px solid ${C.bdr}`}},
+      React.createElement("div",{style:{fontSize:13,fontWeight:600,marginBottom:8}},"Log Sleep"),
+      React.createElement(Inp,{label:"Duration",value:sh,onChange:setSh,placeholder:"8.25",unit:"hrs"}),
+      React.createElement(Inp,{label:"Score",value:sc,onChange:setSc,placeholder:"91"}),
+      React.createElement(Btn,{onClick:()=>{if(sh){setData(p=>({...p,sl:+sh,ss:sc?+sc:null}));save("sleep",{h:+sh,sc:sc?+sc:null})}}},["Save"])
+    ),
+
+    // Stress form
+    et==="stress"&&React.createElement("div",{key:"f_st",style:{background:C.card,borderRadius:12,padding:14,border:`1px solid ${C.bdr}`}},
+      React.createElement("div",{style:{fontSize:13,fontWeight:600,marginBottom:8}},"Waking Stress (1-5)"),
+      React.createElement("div",{style:{display:"flex",gap:6,flexWrap:"wrap"}},
+        [1,1.5,2,2.5,3,3.5,4,4.5,5].map(v=>
+          React.createElement("button",{key:v,onClick:()=>{setData(p=>({...p,st:v}));save("stress",{v})},
+            style:{flex:"1 0 auto",minWidth:36,padding:"10px 6px",background:v<=2?C.grn+"30":v<=3.5?C.amber+"30":C.rose+"30",border:`1px solid ${C.bdr}`,borderRadius:8,color:C.txt,fontSize:12,fontWeight:600,cursor:"pointer"}},v)
+        )
+      )
+    ),
+
+    // Weight form
+    et==="weight"&&React.createElement("div",{key:"f_wt",style:{background:C.card,borderRadius:12,padding:14,border:`1px solid ${C.bdr}`}},
+      React.createElement(Inp,{label:"Weight",value:wv,onChange:setWv,placeholder:"188",unit:"lbs"}),
+      React.createElement(Btn,{onClick:()=>{if(wv){setData(p=>({...p,wt:+wv}));save("weight",{v:+wv})}}},["Save"])
+    ),
+
+    // Alcohol form
+    et==="alcohol"&&React.createElement("div",{key:"f_al",style:{background:C.card,borderRadius:12,padding:14,border:`1px solid ${C.bdr}`}},
+      React.createElement("div",{style:{fontSize:13,fontWeight:600,marginBottom:8}},"Log Alcohol"),
+      React.createElement(Inp,{label:"Std Drinks",value:av,onChange:setAv,placeholder:"2.45"}),
+      React.createElement("div",{style:{fontSize:10,color:C.dim,marginBottom:8}},"16oz 9.2% beer = 2.45 std drinks. Note: finish by 6:45 PM!"),
+      React.createElement(Btn,{onClick:()=>{if(av){setData(p=>({...p,al:(p.al||0)+ +av}));save("alcohol",{v:+av})}}},["Save"])
+    ),
+
+    // Exercise form
+    et==="exercise"&&React.createElement("div",{key:"f_ex",style:{background:C.card,borderRadius:12,padding:14,border:`1px solid ${C.bdr}`}},
+      React.createElement("div",{style:{display:"flex",gap:8}},
+        React.createElement(Btn,{onClick:()=>{setData(p=>({...p,ex:true}));save("exercise",{done:true})},color:C.grn},["✓ Exercise Day"]),
+        React.createElement(Btn,{onClick:()=>{setData(p=>({...p,ex:false}));save("exercise",{done:false})},outline:true,color:C.dim},["Rest Day"])
+      )
+    ),
+
+    // Meal entry
+    et==="meal"&&React.createElement("div",{key:"f_meal",style:{background:C.card,borderRadius:12,padding:14,border:`1px solid ${C.bdr}`}},
+      React.createElement("div",{style:{fontSize:13,fontWeight:600,marginBottom:8}},"Log Meal"),
+      React.createElement("button",{onClick:()=>setSq(!sq),style:{background:C.card2,border:`1px solid ${C.bdr}`,borderRadius:8,padding:"8px 12px",color:C.teal,fontSize:12,cursor:"pointer",width:"100%",textAlign:"left",marginBottom:8}},`⚡ Quick-Pick Items ${sq?"▲":"▼"}`),
+      sq&&React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:4,marginBottom:10,maxHeight:200,overflowY:"auto"}},
+        QMEALS.map(m=>React.createElement("button",{key:m.id,onClick:()=>{addMeal(m);setSq(false)},
+          style:{background:C.bg,border:`1px solid ${C.bdr}`,borderRadius:8,padding:"8px 10px",color:C.txt,fontSize:12,cursor:"pointer",textAlign:"left",display:"flex",justifyContent:"space-between"}},
+          React.createElement("span",null,m.n),React.createElement("span",{style:{color:C.dim}},`${m.cal}cal/${m.p}g`)
+        ))
+      ),
+      React.createElement("textarea",{value:mt,onChange:e=>setMt(e.target.value),placeholder:"Describe meal...",rows:3,
+        style:{width:"100%",background:C.card2,border:`1px solid ${C.bdr}`,borderRadius:8,padding:10,color:C.txt,fontSize:13,resize:"none",outline:"none",boxSizing:"border-box",fontFamily:"inherit"}}),
+      React.createElement("div",{style:{display:"flex",gap:8,marginTop:8}},
+        React.createElement(Btn,{onClick:()=>{if(mt){addMeal({n:mt,estimated:true});setMt("")}}},["📝 Log Text"])
+      )
+    ),
+
+    // Today's readings summary
+    React.createElement("div",{key:"readings",style:{background:C.card,borderRadius:12,padding:14,border:`1px solid ${C.bdr}`}},
+      React.createElement("div",{style:{fontSize:13,fontWeight:600,marginBottom:8}},"TODAY'S READINGS"),
+      React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}},
+        [["Glucose",data.g,"mg/dL",C.teal],["BP",data.bs?`${data.bs}/${data.bd}`:"—","",C.blue],["Pulse",data.pu,"bpm",C.purp],
+         ["Sleep",data.sl,"hrs",C.amber],["Stress",data.st,"/5",C.rose],["Weight",data.wt,"lbs",C.grn]].map(([l,v,u,c])=>
+          React.createElement("div",{key:l,style:{textAlign:"center"}},
+            React.createElement("div",{style:{fontSize:10,color:C.dim}},l),
+            React.createElement("div",{style:{fontSize:16,fontWeight:700,color:v&&v!=="—"?c:C.dim,fontFamily:"monospace"}},v||"—"),
+            React.createElement("div",{style:{fontSize:9,color:C.dim}},u)
+          )
+        )
+      )
+    ),
+  ].filter(Boolean);
+
+  return React.createElement("div",{style:{padding:"12px 16px 100px",display:"flex",flexDirection:"column",gap:14}},els);
+}
+
+// ============================================================
+// TRENDS TAB
+// ============================================================
+function TrendsTab({history}){
+  const [ch,setCh]=useState("glucose");
+  const [ready,setReady]=useState(!!window.Recharts);
+  
+  useEffect(()=>{
+    if(window.Recharts){setReady(true);return}
+    var s=document.createElement("script");
+    s.src="https://cdn.jsdelivr.net/npm/recharts@2.12.7/umd/Recharts.js";
+    s.onload=()=>{RC=window.Recharts;LineChart=RC.LineChart;Line=RC.Line;BarChart=RC.BarChart;Bar=RC.Bar;XAxis=RC.XAxis;YAxis=RC.YAxis;CartesianGrid=RC.CartesianGrid;Tooltip=RC.Tooltip;ResponsiveContainer=RC.ResponsiveContainer;ScatterChart=RC.ScatterChart;Scatter=RC.Scatter;ReferenceLine=RC.ReferenceLine;chartsReady=true;setReady(true)};
+    s.onerror=()=>{};
+    document.head.appendChild(s);
+  },[]);
+  const charts=[{id:"glucose",l:"Fasting Glucose"},{id:"sleepG",l:"Sleep vs Glucose"},{id:"bp",l:"Blood Pressure"},{id:"pulse",l:"Pulse+Alcohol"},{id:"macros",l:"Protein/Fiber"},{id:"weight",l:"Weight"},{id:"exercise",l:"Exercise"},{id:"sugar",l:"Added Sugar"}];
+  const gd=history.filter(d=>d.g!=null).map(d=>({date:fmtD(d.d),glucose:d.g}));
+  const sgd=history.filter(d=>d.g!=null&&d.sl!=null).map(d=>({sleep:d.sl,glucose:d.g}));
+  const bpd=history.filter(d=>d.bs!=null).map(d=>({date:fmtD(d.d),sys:d.bs,dia:d.bd}));
+  const pud=history.filter(d=>d.pu!=null).map(d=>({date:fmtD(d.d),pulse:d.pu,alcohol:(d.al||0)*10}));
+  const mad=history.filter(d=>d.p!=null).map(d=>({date:fmtD(d.d),protein:d.p,fiber:d.fi||0}));
+  const wtd=history.filter(d=>d.wt!=null).map(d=>({date:fmtD(d.d),weight:d.wt}));
+  const exd=history.map(d=>({date:fmtD(d.d),ex:d.ex?1:0}));
+  const sud=history.filter(d=>d.as!=null).map(d=>({date:fmtD(d.d),sugar:d.as}));
+  const tt={contentStyle:{background:C.card,border:`1px solid ${C.bdr}`,borderRadius:8,fontSize:12,color:C.txt}};
+  const xa={tick:{fontSize:9,fill:C.dim},angle:-45,textAnchor:"end",height:50};
+
+  if(!ready)return React.createElement("div",{style:{padding:"12px 16px 100px"}},
+    React.createElement("div",{style:{background:C.card,borderRadius:12,padding:20,textAlign:"center",color:C.dim,fontSize:13}},
+      React.createElement("div",{style:{marginBottom:8}},"📊 Loading charts..."),
+      React.createElement("div",{style:{fontSize:11}},"Downloading charting library. Make sure you have internet.")
+    )
+  );
+
+  let chart;
+  if(ch==="glucose")chart=React.createElement(ResponsiveContainer,{width:"100%",height:"100%"},React.createElement(LineChart,{data:gd},React.createElement(CartesianGrid,{strokeDasharray:"3 3",stroke:C.bdr}),React.createElement(XAxis,{dataKey:"date",...xa}),React.createElement(YAxis,{domain:[80,120],tick:{fontSize:10,fill:C.dim}}),React.createElement(Tooltip,{...tt}),React.createElement(ReferenceLine,{y:100,stroke:C.amber,strokeDasharray:"5 5"}),React.createElement(Line,{type:"monotone",dataKey:"glucose",stroke:C.teal,strokeWidth:2,dot:{fill:C.teal,r:3}})));
+  else if(ch==="sleepG")chart=React.createElement(ResponsiveContainer,{width:"100%",height:"100%"},React.createElement(ScatterChart,null,React.createElement(CartesianGrid,{strokeDasharray:"3 3",stroke:C.bdr}),React.createElement(XAxis,{dataKey:"sleep",name:"Sleep",unit:"hr",domain:[2,10],tick:{fontSize:10,fill:C.dim}}),React.createElement(YAxis,{dataKey:"glucose",domain:[80,120],tick:{fontSize:10,fill:C.dim}}),React.createElement(Tooltip,{...tt}),React.createElement(Scatter,{data:sgd,fill:C.purp})));
+  else if(ch==="bp")chart=React.createElement(ResponsiveContainer,{width:"100%",height:"100%"},React.createElement(LineChart,{data:bpd},React.createElement(CartesianGrid,{strokeDasharray:"3 3",stroke:C.bdr}),React.createElement(XAxis,{dataKey:"date",...xa}),React.createElement(YAxis,{domain:[60,130],tick:{fontSize:10,fill:C.dim}}),React.createElement(Tooltip,{...tt}),React.createElement(Line,{type:"monotone",dataKey:"sys",stroke:C.rose,strokeWidth:2,dot:{r:2},name:"Systolic"}),React.createElement(Line,{type:"monotone",dataKey:"dia",stroke:C.blue,strokeWidth:2,dot:{r:2},name:"Diastolic"})));
+  else if(ch==="pulse")chart=React.createElement(ResponsiveContainer,{width:"100%",height:"100%"},React.createElement(BarChart,{data:pud},React.createElement(CartesianGrid,{strokeDasharray:"3 3",stroke:C.bdr}),React.createElement(XAxis,{dataKey:"date",...xa}),React.createElement(YAxis,{tick:{fontSize:10,fill:C.dim}}),React.createElement(Tooltip,{...tt}),React.createElement(Bar,{dataKey:"pulse",fill:C.purp,radius:[3,3,0,0],name:"Pulse"}),React.createElement(Bar,{dataKey:"alcohol",fill:C.amber,radius:[3,3,0,0],name:"Alcohol×10"})));
+  else if(ch==="macros")chart=React.createElement(ResponsiveContainer,{width:"100%",height:"100%"},React.createElement(BarChart,{data:mad},React.createElement(CartesianGrid,{strokeDasharray:"3 3",stroke:C.bdr}),React.createElement(XAxis,{dataKey:"date",...xa}),React.createElement(YAxis,{tick:{fontSize:10,fill:C.dim}}),React.createElement(Tooltip,{...tt}),React.createElement(Bar,{dataKey:"protein",fill:C.teal,radius:[2,2,0,0],name:"Protein"}),React.createElement(Bar,{dataKey:"fiber",fill:C.grn,radius:[2,2,0,0],name:"Fiber"})));
+  else if(ch==="weight"&&wtd.length>0)chart=React.createElement(ResponsiveContainer,{width:"100%",height:"100%"},React.createElement(LineChart,{data:wtd},React.createElement(CartesianGrid,{strokeDasharray:"3 3",stroke:C.bdr}),React.createElement(XAxis,{dataKey:"date",...xa}),React.createElement(YAxis,{domain:[175,195],tick:{fontSize:10,fill:C.dim}}),React.createElement(Tooltip,{...tt}),React.createElement(ReferenceLine,{y:180,stroke:C.grn,strokeDasharray:"5 5"}),React.createElement(Line,{type:"monotone",dataKey:"weight",stroke:C.amber,strokeWidth:2,dot:{fill:C.amber,r:4}})));
+  else if(ch==="exercise")chart=React.createElement(ResponsiveContainer,{width:"100%",height:"100%"},React.createElement(BarChart,{data:exd.slice(-30)},React.createElement(CartesianGrid,{strokeDasharray:"3 3",stroke:C.bdr}),React.createElement(XAxis,{dataKey:"date",...xa}),React.createElement(YAxis,{domain:[0,1],tick:false}),React.createElement(Tooltip,{...tt}),React.createElement(Bar,{dataKey:"ex",fill:C.grn,radius:[4,4,0,0],name:"Exercised"})));
+  else if(ch==="sugar")chart=React.createElement(ResponsiveContainer,{width:"100%",height:"100%"},React.createElement(BarChart,{data:sud},React.createElement(CartesianGrid,{strokeDasharray:"3 3",stroke:C.bdr}),React.createElement(XAxis,{dataKey:"date",...xa}),React.createElement(YAxis,{tick:{fontSize:10,fill:C.dim}}),React.createElement(Tooltip,{...tt}),React.createElement(ReferenceLine,{y:20,stroke:C.rose,strokeDasharray:"5 5"}),React.createElement(Bar,{dataKey:"sugar",fill:C.teal,radius:[3,3,0,0],name:"Added Sugar"})));
+  else chart=React.createElement("div",{style:{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",color:C.dim}},"No data yet");
+
+  return React.createElement("div",{style:{padding:"12px 16px 100px"}},
+    React.createElement("div",{style:{display:"flex",flexWrap:"wrap",gap:4,marginBottom:12}},
+      charts.map(c=>React.createElement("button",{key:c.id,onClick:()=>setCh(c.id),style:{background:ch===c.id?C.teal:C.card,color:ch===c.id?"#fff":C.dim,border:`1px solid ${ch===c.id?C.teal:C.bdr}`,borderRadius:16,padding:"6px 12px",fontSize:11,cursor:"pointer",fontWeight:500}},c.l))
+    ),
+    React.createElement("div",{style:{background:C.card,borderRadius:12,padding:"12px 8px 12px 0",border:`1px solid ${C.bdr}`,height:280}},chart)
+  );
+}
+
+// ============================================================
+// ALERTS TAB
+// ============================================================
+function AlertsTab({data}){
+  const [dis,setDis]=useState({});
+  const alerts=[];
+  if(data.na>2300)alerts.push({id:"na",msg:`⚠️ Sodium ${Math.round(data.na)}mg — over 2,300. Potassium rescue: banana, coconut water, beans.`,c:C.amber});
+  if(data.as>20)alerts.push({id:"as",msg:`🍬 Added sugar ${Math.round(data.as)}g — over 20g ceiling.`,c:C.rose});
+  if(data.p>0&&data.p<80)alerts.push({id:"prot",msg:`⚠️ Protein only ${Math.round(data.p)}g — add Oikos or Fairlife.`,c:C.amber});
+  if(data.cal>0&&data.cal<800)alerts.push({id:"cal",msg:`🚨 Only ${Math.round(data.cal)} cal — hepatic glucose risk. Eat!`,c:C.rose});
+  if(data.al>=2)alerts.push({id:"al",msg:`🍺 ${data.al} drinks — tomorrow pulse predicted 80-90. Finish by 6:45 PM!`,c:C.amber});
+  if(!data.ex)alerts.push({id:"rest",msg:`Rest day — calorie target 1,800.`,c:C.blue});
+  const rec=[
+    {id:"labs",msg:"⏰ Schedule labs — HIGHEST PRIORITY",c:C.rose},
+    {id:"todo",msg:"📝 Try bedtime to-do list dump",c:C.amber},
+    {id:"kefir",msg:"🛒 Buy Lifeway Plain Kefir + order Momentous Fiber+",c:C.blue},
+    {id:"stamp",msg:"💆 Next derma stamp session ~Apr 10 at 1.0mm",c:C.purp},
+    {id:"oikos",msg:"🏢 Keep Oikos + banana at work",c:C.blue},
+  ];
+  return React.createElement("div",{style:{padding:"12px 16px 100px",display:"flex",flexDirection:"column",gap:8}},
+    React.createElement("div",{style:{fontSize:14,fontWeight:700}},"Active Alerts"),
+    alerts.filter(a=>!dis[a.id]).map(a=>React.createElement("div",{key:a.id,style:{background:a.c+"15",border:`1px solid ${a.c}40`,borderRadius:10,padding:"10px 12px",display:"flex",gap:10}},
+      React.createElement("div",{style:{flex:1,fontSize:12,lineHeight:1.5}},a.msg),
+      React.createElement("button",{onClick:()=>setDis(p=>({...p,[a.id]:true})),style:{background:"none",border:"none",color:C.dim,cursor:"pointer",fontSize:16}},"✕")
+    )),
+    alerts.filter(a=>!dis[a.id]).length===0&&React.createElement("div",{style:{color:C.grn,fontSize:13,padding:12}},"✓ No active alerts"),
+    React.createElement("div",{style:{fontSize:14,fontWeight:700,marginTop:12}},"Reminders"),
+    rec.filter(r=>!dis[r.id]).map(r=>React.createElement("div",{key:r.id,style:{background:C.card,border:`1px solid ${C.bdr}`,borderRadius:10,padding:"10px 12px",display:"flex",gap:10}},
+      React.createElement("div",{style:{flex:1,fontSize:12,lineHeight:1.5}},r.msg),
+      React.createElement("button",{onClick:()=>setDis(p=>({...p,[r.id]:true})),style:{background:"none",border:"none",color:C.dim,cursor:"pointer",fontSize:11}},"pause")
+    ))
+  );
+}
+
+// ============================================================
+// PROTOCOL TAB
+// ============================================================
+function ProtocolTab({supps,setSupps}){
+  return React.createElement("div",{style:{padding:"12px 16px 100px",display:"flex",flexDirection:"column",gap:14}},
+    React.createElement("div",null,
+      React.createElement("div",{style:{fontSize:14,fontWeight:700,marginBottom:8}},"Supplement Protocol"),
+      React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:6}},SUPPS.map(s=>React.createElement(SuppCard,{key:s.id,s,done:!!supps[s.id],onTap:()=>setSupps(p=>({...p,[s.id]:!p[s.id]}))})))
+    ),
+    React.createElement("div",null,
+      React.createElement("div",{style:{fontSize:14,fontWeight:700,marginBottom:8}},"Daily Targets"),
+      React.createElement("div",{style:{background:C.card,borderRadius:10,padding:12}},
+        [["Calories","1,800 rest / 2,000+ exercise"],["Protein","110-140g raw"],["Carbs","100-155g"],["Fiber","28g+"],["Added Sugar","<20g"],["Sodium","<2,300mg"],["Potassium",">3,000mg"]].map(([k,v])=>
+          React.createElement("div",{key:k,style:{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:`1px solid ${C.bdr}22`,fontSize:12}},
+            React.createElement("span",{style:{color:C.dim}},k),React.createElement("span",{style:{color:C.txt,fontWeight:600,fontFamily:"monospace"}},v)
+          )
+        )
+      )
+    ),
+    React.createElement("div",null,
+      React.createElement("div",{style:{fontSize:14,fontWeight:700,marginBottom:8}},"⚠️ Sodium Traps"),
+      React.createElement("div",{style:{background:C.card,borderRadius:10,padding:12}},
+        [["Jimmy John's sub","~1,500mg"],["Costco pizza slice","~1,370mg"],["Med Crunch full bag","1,190mg ⚠️+17.5g sugar"],["Amy's Enchiladas ×2","~987mg"],["Cedarlane soup/cup","690mg"],["Egg bites ×2","680mg"]].map(([k,v],i)=>
+          React.createElement("div",{key:i,style:{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.bdr}22`,fontSize:11}},
+            React.createElement("span",{style:{color:C.txt}},k),React.createElement("span",{style:{color:C.rose,fontWeight:600,fontFamily:"monospace"}},v)
+          )
+        )
+      )
+    )
+  );
+}
+
+// ============================================================
+// EXPORT TAB
+// ============================================================
+function ExportTab({data,history}){
+  const [copied,setCopied]=useState(null);
+  const todayS=()=>`Date: ${todayStr()}\nCalories: ${data.cal||0} | Protein: ${data.p||0}g raw / ${data.ep||0}g eff | Carbs: ${data.ca||0}g | Fiber: ${data.fi||0}g\nAdded Sugar: ${data.as||0}g | Fat: ${data.fa||0}g / Sat ${data.sf||0}g | Sodium: ${data.na||0}mg | K: ${data.k||0}mg\nGlucose: ${data.g||"—"} | BP: ${data.bs||"—"}/${data.bd||"—"} | Pulse: ${data.pu||"—"} | Sleep: ${data.sl||"—"}hr\nStress: ${data.st||"—"} | Alcohol: ${data.al||0} | Exercise: ${data.ex?"Yes":"No"}`;
+  const weekS=()=>history.slice(-7).map(d=>`${fmtD(d.d)}: ${d.cal||"?"}cal, ${d.p||"?"}g prot, gluc ${d.g||"?"}, sleep ${d.sl||"?"}hr, Na ${d.na||"?"}mg${d.al?", "+d.al+"drinks":""}${d.ex?", exercise":""}`).join("\n");
+  const fullS=()=>JSON.stringify({today:data,history:history.slice(-30)},null,2);
+  const copy=(txt,id)=>{navigator.clipboard.writeText(txt).then(()=>{setCopied(id);setTimeout(()=>setCopied(null),2000)})};
+  return React.createElement("div",{style:{padding:"12px 16px 100px",display:"flex",flexDirection:"column",gap:10}},
+    React.createElement("div",{style:{fontSize:14,fontWeight:700}},"Export for Opus Conversation"),
+    React.createElement("div",{style:{fontSize:11,color:C.dim,lineHeight:1.5}},"Copy data to paste into your project conversation with Claude Opus."),
+    [["today","📋 Today's Summary",todayS],["week","📊 Last 7 Days",weekS],["full","📦 Full Data (JSON)",fullS]].map(([id,label,fn])=>
+      React.createElement("button",{key:id,onClick:()=>copy(fn(),id),style:{background:C.card,border:`1px solid ${copied===id?C.grn:C.bdr}`,borderRadius:10,padding:"12px 14px",color:copied===id?C.grn:C.txt,fontSize:13,cursor:"pointer",textAlign:"left",fontWeight:500}},copied===id?"✓ Copied!":label)
+    )
+  );
+}
+
+// ============================================================
+// AI CHAT
+// ============================================================
+function ChatDrawer({open,onClose,data,history}){
+  const [msgs,setMsgs]=useState([]);
+  const [inp,setInp]=useState("");
+  const [loading,setLoading]=useState(false);
+  const [needKey,setNeedKey]=useState(false);
+  const ref=useRef(null);
+  useEffect(()=>{if(ref.current)ref.current.scrollTop=ref.current.scrollHeight},[msgs]);
+  useEffect(()=>{const k=LS.get("api_key");setNeedKey(!k)},[open]);
+
+  const send=async()=>{
+    if(!inp.trim()||loading)return;
+    const key=LS.get("api_key");
+    if(!key){setNeedKey(true);return}
+    const userMsg=inp.trim();setInp("");
+    setMsgs(p=>[...p,{role:"user",content:userMsg}]);setLoading(true);
+    const ctx=`Today: Cal ${data.cal||0}, Prot ${data.p||0}g, Carbs ${data.ca||0}g, Fiber ${data.fi||0}g, Sugar ${data.as||0}g, Na ${data.na||0}mg, K ${data.k||0}mg, Glucose ${data.g||"?"}, Sleep ${data.sl||"?"}hr, Stress ${data.st||"?"}, Alcohol ${data.al||0}, Exercise ${data.ex?"yes":"no"}. Recent glucose: ${history.slice(-7).filter(d=>d.g).map(d=>fmtD(d.d)+":"+d.g).join(", ")}.`;
+    try{
+      const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
+        body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,system:`You are a health assistant. ${DB.get("profile")||DEFAULT_PROFILE}\n\nCurrent:\n${ctx}\n\nBe concise, specific to the user's protocol.`,
+          messages:[...msgs.map(m=>({role:m.role,content:m.content})),{role:"user",content:userMsg}]})});
+      const d=await r.json();
+      if(d.error){setMsgs(p=>[...p,{role:"assistant",content:`Error: ${d.error.message}`}])}
+      else{const t=d.content?.map(b=>b.text||"").join("")||"No response";setMsgs(p=>[...p,{role:"assistant",content:t}])}
+    }catch(e){setMsgs(p=>[...p,{role:"assistant",content:"Connection error. Check your API key and try again."}])}
+    setLoading(false);
+  };
+
+  if(!open)return null;
+  return React.createElement("div",{style:{position:"fixed",inset:0,background:C.bg+"f5",zIndex:100,display:"flex",flexDirection:"column"}},
+    React.createElement("div",{style:{display:"flex",alignItems:"center",padding:"12px 16px",borderBottom:`1px solid ${C.bdr}`}},
+      React.createElement("span",{style:{fontSize:15,fontWeight:700,flex:1}},"💬 Health Assistant"),
+      React.createElement("button",{onClick:onClose,style:{background:"none",border:"none",color:C.dim,fontSize:20,cursor:"pointer"}},"✕")
+    ),
+    needKey&&React.createElement("div",{style:{padding:16}},
+      React.createElement("div",{style:{fontSize:13,fontWeight:600,marginBottom:8}},"Enter your Anthropic API Key"),
+      React.createElement("div",{style:{fontSize:11,color:C.dim,marginBottom:12,lineHeight:1.5}},"Your key is stored only on this device in localStorage. It never leaves your phone except to call the API."),
+      React.createElement("input",{type:"password",placeholder:"sk-ant-...",id:"apiKeyInput",style:{width:"100%",background:C.card2,border:`1px solid ${C.bdr}`,borderRadius:8,padding:"10px 12px",color:C.txt,fontSize:14,outline:"none",boxSizing:"border-box",marginBottom:8}}),
+      React.createElement(Btn,{onClick:()=>{const v=document.getElementById("apiKeyInput").value;if(v){LS.set("api_key",v);setNeedKey(false)}}},["Save Key"])
+    ),
+    !needKey&&React.createElement("div",{ref,style:{flex:1,overflowY:"auto",padding:16,display:"flex",flexDirection:"column",gap:10}},
+      msgs.length===0&&React.createElement("div",{style:{color:C.dim,fontSize:12,textAlign:"center",marginTop:40}},"Ask about your health data, protocol, or targets."),
+      msgs.map((m,i)=>React.createElement("div",{key:i,style:{alignSelf:m.role==="user"?"flex-end":"flex-start",background:m.role==="user"?C.teal:C.card,borderRadius:12,padding:"8px 12px",maxWidth:"85%",fontSize:13,lineHeight:1.5,whiteSpace:"pre-wrap"}},m.content)),
+      loading&&React.createElement("div",{style:{alignSelf:"flex-start",background:C.card,borderRadius:12,padding:"8px 12px",fontSize:13,color:C.dim}},"Thinking...")
+    ),
+    !needKey&&React.createElement("div",{style:{padding:"10px 16px",borderTop:`1px solid ${C.bdr}`,display:"flex",gap:8}},
+      React.createElement("input",{value:inp,onChange:e=>setInp(e.target.value),onKeyDown:e=>e.key==="Enter"&&send(),placeholder:"Ask about your health...",
+        style:{flex:1,background:C.card2,border:`1px solid ${C.bdr}`,borderRadius:20,padding:"10px 14px",color:C.txt,fontSize:13,outline:"none"}}),
+      React.createElement("button",{onClick:send,disabled:loading,style:{background:C.teal,border:"none",borderRadius:20,width:40,height:40,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",color:"#fff",fontSize:16}},"→")
+    )
+  );
+}
+
+// ============================================================
+// SETTINGS (API Key management)
+// ============================================================
+function SettingsTab({history,setHistory}){
+  const [hasKey,setHasKey]=useState(!!LS.get("api_key"));
+  const [hasProfile,setHasProfile]=useState(!!DB.get("profile"));
+  const [hasSyncKey,setHasSyncKey]=useState(!!getSyncKey());
+  const [syncKeyInput,setSyncKeyInput]=useState("");
+  const [hasHist,setHasHist]=useState(history.length>0);
+  const [status,setStatus]=useState("");
+  const [importText,setImportText]=useState("");
+  const [showImport,setShowImport]=useState(false);
+
+  const doImport=()=>{
+    try{
+      const data=JSON.parse(importText);
+      if(data.history&&Array.isArray(data.history)){
+        DB.set("history",data.history);
+        setHistory(data.history);
+        setHasHist(true);
+      }
+      if(data.profile){
+        DB.set("profile",data.profile);
+        setHasProfile(true);
+      }
+      setStatus("✓ Data imported successfully!");
+      setImportText("");
+      setShowImport(false);
+      setTimeout(()=>setStatus(""),3000);
+    }catch(e){setStatus("❌ Invalid JSON. Copy the import data from Claude and try again.")}
+  };
+
+  const doExportAll=()=>{
+    const exp={history:history,profile:DB.get("profile")||"",today:DB.get("today_"+todayStr())};
+    var t=JSON.stringify(exp,null,2);
+    navigator.clipboard.writeText(t).then(()=>{setStatus("✓ All data copied to clipboard");setTimeout(()=>setStatus(""),3000)});
+  };
+
+  return React.createElement("div",{style:{padding:"12px 16px 100px",display:"flex",flexDirection:"column",gap:12}},
+    React.createElement("div",{style:{fontSize:14,fontWeight:700}},"Settings"),
+
+    // Sync Key
+    React.createElement("div",{style:{background:C.card,borderRadius:10,padding:14,border:`1px solid ${hasSyncKey?C.grn+"60":C.amber+"60"}`}},
+      React.createElement("div",{style:{fontSize:13,fontWeight:600,marginBottom:6}},"☁️ Cloud Sync"),
+      hasSyncKey?React.createElement("div",null,
+        React.createElement("div",{style:{fontSize:12,color:C.grn,marginBottom:8}},"✓ Syncing with key: "+getSyncKey().substring(0,8)+"..."),
+        React.createElement("div",{style:{fontSize:11,color:C.dim,marginBottom:8}},"Use the same sync key on your other devices to keep data in sync."),
+        React.createElement("div",{style:{display:"flex",gap:8}},
+          React.createElement(Btn,{onClick:async()=>{setStatus("Pulling from cloud...");const r=await DB.pullAll();if(r){if(r.history){setHistory(r.history);LS.set("history",r.history);setHasHist(true)}if(r.profile){LS.set("profile",r.profile);setHasProfile(true)}setStatus("✓ Synced from cloud!")}else{setStatus("No cloud data found")}setTimeout(()=>setStatus(""),3000)},color:C.blue,style:{fontSize:12}},["⬇ Pull from Cloud"]),
+          React.createElement(Btn,{onClick:()=>{if(confirm("Remove sync key? Data stays on this device but stops syncing.")){localStorage.removeItem("ph_sync_key");setHasSyncKey(false)}},color:C.rose,outline:true,style:{fontSize:12}},["Disconnect"])
+        )
+      ):React.createElement("div",null,
+        React.createElement("div",{style:{fontSize:11,color:C.dim,marginBottom:10,lineHeight:1.5}},"Choose a sync passphrase. Use the same phrase on all your devices. Your data is stored at a private path derived from this phrase."),
+        React.createElement("input",{type:"text",value:syncKeyInput,onChange:e=>setSyncKeyInput(e.target.value),placeholder:"e.g. my-health-2026",
+          style:{width:"100%",background:C.card2,border:`1px solid ${C.bdr}`,borderRadius:8,padding:"10px 12px",color:C.txt,fontSize:14,outline:"none",boxSizing:"border-box",marginBottom:8}}),
+        React.createElement(Btn,{onClick:()=>{if(syncKeyInput.trim().length>=4){var h=0;for(var i=0;i<syncKeyInput.length;i++){h=((h<<5)-h)+syncKeyInput.charCodeAt(i);h|=0}var key="u"+Math.abs(h).toString(36);LS.set("sync_key",key);setHasSyncKey(true);setStatus("✓ Sync key set! Now import your data or pull from cloud.");setTimeout(()=>setStatus(""),4000)}else{setStatus("Passphrase must be at least 4 characters")}},color:C.teal},["Set Sync Key"])
+      )
+    ),
+
+    // Data status
+    React.createElement("div",{style:{background:C.card,borderRadius:10,padding:14,border:`1px solid ${C.bdr}`}},
+      React.createElement("div",{style:{fontSize:13,fontWeight:600,marginBottom:10}},"Data Status"),
+      React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:6}},
+        React.createElement("div",{style:{fontSize:12,color:hasHist?C.grn:C.amber}},hasHist?`✓ ${history.length} days of history loaded`:"⚠ No historical data — import below"),
+        React.createElement("div",{style:{fontSize:12,color:hasProfile?C.grn:C.amber}},hasProfile?"✓ Health profile loaded":"⚠ No health profile — import below"),
+        React.createElement("div",{style:{fontSize:12,color:hasKey?C.grn:C.dim}},hasKey?"✓ API key saved":"○ No API key (AI chat disabled)")
+      )
+    ),
+
+    // Import
+    React.createElement("div",{style:{background:C.card,borderRadius:10,padding:14,border:`1px solid ${C.bdr}`}},
+      React.createElement("div",{style:{fontSize:13,fontWeight:600,marginBottom:6}},"Import Data"),
+      React.createElement("div",{style:{fontSize:11,color:C.dim,marginBottom:10,lineHeight:1.5}},'Paste the JSON data from your Claude conversation. It should contain {"history":[...],"profile":"..."}.'),
+      !showImport&&React.createElement(Btn,{onClick:()=>setShowImport(true),color:C.teal},["📥 Import Data"]),
+      showImport&&React.createElement("div",null,
+        React.createElement("textarea",{value:importText,onChange:e=>setImportText(e.target.value),placeholder:'Paste JSON here...',rows:6,
+          style:{width:"100%",background:C.card2,border:`1px solid ${C.bdr}`,borderRadius:8,padding:10,color:C.txt,fontSize:11,resize:"vertical",outline:"none",boxSizing:"border-box",fontFamily:"monospace",marginBottom:8}}),
+        React.createElement("div",{style:{display:"flex",gap:8}},
+          React.createElement(Btn,{onClick:doImport,color:C.grn},["Import"]),
+          React.createElement(Btn,{onClick:()=>{setShowImport(false);setImportText("")},outline:true,color:C.dim},["Cancel"])
+        )
+      )
+    ),
+
+    // Export all
+    React.createElement("div",{style:{background:C.card,borderRadius:10,padding:14,border:`1px solid ${C.bdr}`}},
+      React.createElement("div",{style:{fontSize:13,fontWeight:600,marginBottom:6}},"Export All Data"),
+      React.createElement("div",{style:{fontSize:11,color:C.dim,marginBottom:10,lineHeight:1.5}},"Copy all your health data to clipboard for backup or transfer to another device."),
+      React.createElement(Btn,{onClick:doExportAll,color:C.blue},["📤 Export All to Clipboard"])
+    ),
+
+    // API Key
+    React.createElement("div",{style:{background:C.card,borderRadius:10,padding:14,border:`1px solid ${C.bdr}`}},
+      React.createElement("div",{style:{fontSize:13,fontWeight:600,marginBottom:8}},"API Key"),
+      React.createElement("div",{style:{fontSize:11,color:C.dim,marginBottom:8}},hasKey?"Key saved on this device only.":"Enter your Anthropic API key for AI chat."),
+      !hasKey&&React.createElement("div",null,
+        React.createElement("input",{type:"password",placeholder:"sk-ant-...",id:"apiKeyInput2",
+          style:{width:"100%",background:C.card2,border:`1px solid ${C.bdr}`,borderRadius:8,padding:"10px 12px",color:C.txt,fontSize:14,outline:"none",boxSizing:"border-box",marginBottom:8}}),
+        React.createElement(Btn,{onClick:()=>{var v=document.getElementById("apiKeyInput2").value;if(v){LS.set("api_key",v);setHasKey(true);setStatus("✓ API key saved")}},color:C.teal},["Save Key"])
+      ),
+      hasKey&&React.createElement(Btn,{onClick:()=>{localStorage.removeItem("ph_api_key");setHasKey(false)},color:C.rose,outline:true,style:{fontSize:12}},["Remove Key"])
+    ),
+
+    // Clear data
+    React.createElement("div",{style:{background:C.card,borderRadius:10,padding:14,border:`1px solid ${C.bdr}`}},
+      React.createElement("div",{style:{fontSize:13,fontWeight:600,marginBottom:8}},"Clear Data"),
+      React.createElement(Btn,{onClick:()=>{if(confirm("Clear ALL health data? Cannot be undone.")){Object.keys(localStorage).filter(k=>k.startsWith("ph_")).forEach(k=>localStorage.removeItem(k));setStatus("Data cleared. Refresh page.");setHasHist(false);setHasProfile(false)}},color:C.rose,outline:true,style:{fontSize:12}},["Clear All Data"])
+    ),
+
+    // Status message
+    status&&React.createElement("div",{style:{background:status.startsWith("✓")?C.grn+"20":C.rose+"20",border:`1px solid ${status.startsWith("✓")?C.grn:C.rose}40`,borderRadius:10,padding:"10px 12px",fontSize:12,color:status.startsWith("✓")?C.grn:C.rose,textAlign:"center"}},status)
+  );
+}
+
+// ============================================================
+// MAIN APP
+// ============================================================
+function App(){
+  const [tab,setTab]=useState("today");
+  const [history,setHistory]=useState([]);
+  const [td,setTd]=useState({cal:0,p:0,ep:0,ca:0,fi:0,as:0,su:0,fa:0,sf:0,na:0,k:0,g:null,bs:null,bd:null,pu:null,sl:null,ss:null,st:null,al:0,ex:false,wt:null,meals:[]});
+  const [supps,setSupps]=useState({});
+  const [chatOpen,setChatOpen]=useState(false);
+  const [loaded,setLoaded]=useState(false);
+
+  useEffect(()=>{
+    (async()=>{
+      // Load from localStorage first (instant)
+      const saved=DB.get("today_"+todayStr());
+      if(saved)setTd(saved);
+      const savedS=DB.get("supps_"+todayStr());
+      if(savedS)setSupps(savedS);
+      const h=DB.get("history");
+      if(h&&h.length>0)setHistory(h);
+      else if(HIST.length>0){DB.set("history",HIST);setHistory(HIST)}
+      setLoaded(true);
+      // Then pull from Firebase (may override with newer data)
+      if(getSyncKey()){
+        const remote=await DB.pullAll();
+        if(remote){
+          if(remote["today_"+todayStr()])setTd(remote["today_"+todayStr()]);
+          if(remote["supps_"+todayStr()])setSupps(remote["supps_"+todayStr()]);
+          if(remote.history&&remote.history.length>0){setHistory(remote.history);LS.set("history",remote.history)}
+          if(remote.profile)LS.set("profile",remote.profile);
+        }
+      }
+    })();
+  },[]);
+
+  useEffect(()=>{if(loaded)DB.set("today_"+todayStr(),td)},[td,loaded]);
+  useEffect(()=>{if(loaded)DB.set("supps_"+todayStr(),supps)},[supps,loaded]);
+
+  const addMeal=m=>{
+    if(m.cal!=null){
+      setTd(p=>({...p,cal:(p.cal||0)+(m.cal||0),p:(p.p||0)+(m.p||0),ep:(p.ep||0)+(m.ep||m.p||0),ca:(p.ca||0)+(m.ca||0),fi:(p.fi||0)+(m.fi||0),as:(p.as||0)+(m.as||0),su:(p.su||0)+(m.su||0),fa:(p.fa||0)+(m.fa||0),sf:(p.sf||0)+(m.sf||0),na:(p.na||0)+(m.na||0),k:(p.k||0)+(m.k||0),meals:[...(p.meals||[]),{...m,t:new Date().toISOString()}]}));
+    }
+  };
+  const addReading=r=>{/* readings stored with today data */};
+
+  const tabs=[{id:"today",l:"Today",i:"📊"},{id:"trends",l:"Trends",i:"📈"},{id:"alerts",l:"Alerts",i:"🔔"},{id:"protocol",l:"Protocol",i:"📋"},{id:"export",l:"Export",i:"📤"},{id:"settings",l:"Settings",i:"⚙️"}];
+
+  if(!loaded)return React.createElement("div",{style:{background:C.bg,height:"100vh",display:"flex",alignItems:"center",justifyContent:"center",color:C.teal}},"Loading...");
+
+  return React.createElement("div",{style:{background:C.bg,height:"100vh",display:"flex",flexDirection:"column",maxWidth:480,margin:"0 auto"}},
+    // Header
+    React.createElement("div",{style:{padding:"14px 16px 8px",borderBottom:`1px solid ${C.bdr}33`,flexShrink:0}},
+      React.createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center"}},
+        React.createElement("div",null,
+          React.createElement("div",{style:{fontSize:18,fontWeight:800,color:C.teal,letterSpacing:-0.5}},"HEALTH DASH"),
+          React.createElement("div",{style:{fontSize:11,color:C.dim}},new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"}))
+        ),
+        React.createElement("button",{onClick:()=>setChatOpen(true),style:{background:C.teal,border:"none",borderRadius:20,padding:"8px 14px",color:"#fff",fontSize:12,fontWeight:600,cursor:"pointer"}},"💬 AI Chat")
+      )
+    ),
+    // Content
+    React.createElement("div",{style:{flex:1,overflowY:"auto"}},
+      tab==="today"&&React.createElement(TodayTab,{data:td,setData:setTd,supps,setSupps,addMeal,addReading}),
+      tab==="trends"&&React.createElement(TrendsTab,{history}),
+      tab==="alerts"&&React.createElement(AlertsTab,{data:td}),
+      tab==="protocol"&&React.createElement(ProtocolTab,{supps,setSupps}),
+      tab==="export"&&React.createElement(ExportTab,{data:td,history}),
+      tab==="settings"&&React.createElement(SettingsTab,{history,setHistory}),
+    ),
+    // Tab bar
+    React.createElement("div",{style:{flexShrink:0,background:C.card,borderTop:`1px solid ${C.bdr}`,display:"flex",paddingBottom:8}},
+      tabs.map(t=>React.createElement("button",{key:t.id,onClick:()=>setTab(t.id),style:{flex:1,background:"none",border:"none",padding:"10px 2px 6px",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:2}},
+        React.createElement("span",{style:{fontSize:16}},t.i),
+        React.createElement("span",{style:{fontSize:9,fontWeight:tab===t.id?700:400,color:tab===t.id?C.teal:C.dim}},t.l)
+      ))
+    ),
+    // Chat
+    React.createElement(ChatDrawer,{open:chatOpen,onClose:()=>setChatOpen(false),data:td,history})
+  );
+}
+
+try{ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App))}catch(e){document.getElementById("root").innerHTML='<div style="padding:20px;color:#f43f5e;font-size:14px;line-height:1.6"><b>Startup Error:</b><br>'+e.message+'</div>';}
+</script>
+</body>
+</html>
