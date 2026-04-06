@@ -517,7 +517,7 @@ function SettingsTab({history,setHistory}){
   const [importText,setImportText]=useState("");
   const [showImport,setShowImport]=useState(false);
 
-  const doImport=()=>{
+  const doImport=async()=>{
     try{
       const data=JSON.parse(importText);
       if(data.history&&Array.isArray(data.history)){
@@ -529,7 +529,11 @@ function SettingsTab({history,setHistory}){
         DB.set("profile",data.profile);
         setHasProfile(true);
       }
-      setStatus("✓ Data imported successfully!");
+      setStatus("✓ Data imported! Pushing to cloud...");
+      // Auto-push to Firebase if sync key exists
+      var sk=getSyncKey();
+      if(sk){try{var pushData={};if(data.history)pushData.history=data.history;if(data.profile)pushData.profile=data.profile;await fetch(FB_URL+"/users/"+sk+".json",{method:"PATCH",body:JSON.stringify(pushData)});setStatus("✓ Data imported and synced to cloud!")}catch(e){setStatus("✓ Imported locally. Cloud sync failed: "+e.message)}}
+      else{setStatus("✓ Data imported locally. Set a sync key to sync to cloud.")}
       setImportText("");
       setShowImport(false);
       setTimeout(()=>setStatus(""),3000);
@@ -551,7 +555,8 @@ function SettingsTab({history,setHistory}){
       hasSyncKey?React.createElement("div",null,
         React.createElement("div",{style:{fontSize:12,color:C.grn,marginBottom:8}},"✓ Syncing with key: "+getSyncKey()),
         React.createElement("div",{style:{fontSize:11,color:C.dim,marginBottom:8}},"Use the same sync key on your other devices to keep data in sync."),
-        React.createElement("div",{style:{display:"flex",gap:8}},
+        React.createElement("div",{style:{display:"flex",gap:8,flexWrap:"wrap"}},
+          React.createElement(Btn,{onClick:async()=>{var sk=getSyncKey();setStatus("Pushing to cloud... (key: "+sk+")");try{var data={};var h=LS.get("history");if(h)data.history=h;var p=LS.get("profile");if(p)data.profile=p;var t=LS.get("today_"+todayStr());if(t)data["today_"+todayStr()]=t;var s=LS.get("supps_"+todayStr());if(s)data["supps_"+todayStr()]=s;await fetch(FB_URL+"/users/"+sk+".json",{method:"PUT",body:JSON.stringify(data)});setStatus("✓ Pushed to cloud! "+(data.history?data.history.length:0)+" days of history uploaded.")}catch(err){setStatus("❌ Error: "+err.message)}setTimeout(()=>setStatus(""),6000)},color:C.grn,style:{fontSize:12}},["⬆ Push to Cloud"]),
           React.createElement(Btn,{onClick:async()=>{var sk=getSyncKey();setStatus("Pulling from cloud... (key: "+sk+")");try{var url=FB_URL+"/users/"+sk+".json";var resp=await fetch(url);var r=await resp.json();if(r&&typeof r==="object"&&Object.keys(r).length>0){var count=0;if(r.history){setHistory(r.history);LS.set("history",r.history);setHasHist(true);count=r.history.length}if(r.profile){LS.set("profile",r.profile);setHasProfile(true)}setStatus("✓ Synced! "+count+" days of history loaded.")}else{setStatus("⚠ No data found at key: "+sk+". Make sure you used the same passphrase on both devices.")}}catch(err){setStatus("❌ Error: "+err.message)}setTimeout(()=>setStatus(""),6000)},color:C.blue,style:{fontSize:12}},["⬇ Pull from Cloud"]),
           React.createElement(Btn,{onClick:()=>{if(confirm("Remove sync key? Data stays on this device but stops syncing.")){localStorage.removeItem("ph_sync_key");setHasSyncKey(false)}},color:C.rose,outline:true,style:{fontSize:12}},["Disconnect"])
         )
