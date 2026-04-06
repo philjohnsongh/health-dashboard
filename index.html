@@ -27,10 +27,7 @@ input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
 <script>window.onerror=function(m,u,l){document.getElementById("root").innerHTML='<div style="padding:20px;color:#f43f5e;font-size:14px;line-height:1.6"><b>Error:</b><br>'+m+'<br><br>Line: '+l+'<br><br>Make sure you have internet for first load (CDN scripts).</div>';}</script>
 <script type="text/javascript">
 const {useState,useEffect,useRef,useCallback}=React;
-// Recharts loaded async - may not be available immediately
-var RC = window.Recharts || {};
-var LineChart=RC.LineChart,Line=RC.Line,BarChart=RC.BarChart,Bar=RC.Bar,XAxis=RC.XAxis,YAxis=RC.YAxis,CartesianGrid=RC.CartesianGrid,Tooltip=RC.Tooltip,ResponsiveContainer=RC.ResponsiveContainer,ScatterChart=RC.ScatterChart,Scatter=RC.Scatter,ReferenceLine=RC.ReferenceLine;
-var chartsReady = !!window.Recharts;
+// Recharts loaded dynamically in TrendsTab - accessed via window.Recharts
 
 // ============================================================
 // CONSTANTS
@@ -318,45 +315,53 @@ function TrendsTab({history}){
     if(window.Recharts){setReady(true);return}
     var s=document.createElement("script");
     s.src="https://cdn.jsdelivr.net/npm/recharts@2.12.7/umd/Recharts.js";
-    s.onload=()=>{RC=window.Recharts;LineChart=RC.LineChart;Line=RC.Line;BarChart=RC.BarChart;Bar=RC.Bar;XAxis=RC.XAxis;YAxis=RC.YAxis;CartesianGrid=RC.CartesianGrid;Tooltip=RC.Tooltip;ResponsiveContainer=RC.ResponsiveContainer;ScatterChart=RC.ScatterChart;Scatter=RC.Scatter;ReferenceLine=RC.ReferenceLine;chartsReady=true;setReady(true)};
+    s.onload=()=>setReady(true);
     s.onerror=()=>{};
     document.head.appendChild(s);
   },[]);
-  const charts=[{id:"glucose",l:"Fasting Glucose"},{id:"sleepG",l:"Sleep vs Glucose"},{id:"bp",l:"Blood Pressure"},{id:"pulse",l:"Pulse+Alcohol"},{id:"macros",l:"Protein/Fiber"},{id:"weight",l:"Weight"},{id:"exercise",l:"Exercise"},{id:"sugar",l:"Added Sugar"}];
-  const gd=history.filter(d=>d.g!=null).map(d=>({date:fmtD(d.d),glucose:d.g}));
-  const sgd=history.filter(d=>d.g!=null&&d.sl!=null).map(d=>({sleep:d.sl,glucose:d.g}));
-  const bpd=history.filter(d=>d.bs!=null).map(d=>({date:fmtD(d.d),sys:d.bs,dia:d.bd}));
-  const pud=history.filter(d=>d.pu!=null).map(d=>({date:fmtD(d.d),pulse:d.pu,alcohol:(d.al||0)*10}));
-  const mad=history.filter(d=>d.p!=null).map(d=>({date:fmtD(d.d),protein:d.p,fiber:d.fi||0}));
-  const wtd=history.filter(d=>d.wt!=null).map(d=>({date:fmtD(d.d),weight:d.wt}));
-  const exd=history.map(d=>({date:fmtD(d.d),ex:d.ex?1:0}));
-  const sud=history.filter(d=>d.as!=null).map(d=>({date:fmtD(d.d),sugar:d.as}));
-  const tt={contentStyle:{background:C.card,border:`1px solid ${C.bdr}`,borderRadius:8,fontSize:12,color:C.txt}};
-  const xa={tick:{fontSize:9,fill:C.dim},angle:-45,textAnchor:"end",height:50};
 
-  if(!ready)return React.createElement("div",{style:{padding:"12px 16px 100px"}},
+  const charts=[{id:"glucose",l:"Fasting Glucose"},{id:"sleepG",l:"Sleep vs Glucose"},{id:"bp",l:"Blood Pressure"},{id:"pulse",l:"Pulse+Alcohol"},{id:"macros",l:"Protein/Fiber"},{id:"weight",l:"Weight"},{id:"exercise",l:"Exercise"},{id:"sugar",l:"Added Sugar"}];
+
+  if(!ready||!window.Recharts)return React.createElement("div",{style:{padding:"12px 16px 100px"}},
     React.createElement("div",{style:{background:C.card,borderRadius:12,padding:20,textAlign:"center",color:C.dim,fontSize:13}},
       React.createElement("div",{style:{marginBottom:8}},"📊 Loading charts..."),
       React.createElement("div",{style:{fontSize:11}},"Downloading charting library. Make sure you have internet.")
     )
   );
 
-  let chart;
-  if(ch==="glucose")chart=React.createElement(ResponsiveContainer,{width:"100%",height:"100%"},React.createElement(LineChart,{data:gd},React.createElement(CartesianGrid,{strokeDasharray:"3 3",stroke:C.bdr}),React.createElement(XAxis,{dataKey:"date",...xa}),React.createElement(YAxis,{domain:[80,120],tick:{fontSize:10,fill:C.dim}}),React.createElement(Tooltip,{...tt}),React.createElement(ReferenceLine,{y:100,stroke:C.amber,strokeDasharray:"5 5"}),React.createElement(Line,{type:"monotone",dataKey:"glucose",stroke:C.teal,strokeWidth:2,dot:{fill:C.teal,r:3}})));
-  else if(ch==="sleepG")chart=React.createElement(ResponsiveContainer,{width:"100%",height:"100%"},React.createElement(ScatterChart,null,React.createElement(CartesianGrid,{strokeDasharray:"3 3",stroke:C.bdr}),React.createElement(XAxis,{dataKey:"sleep",name:"Sleep",unit:"hr",domain:[2,10],tick:{fontSize:10,fill:C.dim}}),React.createElement(YAxis,{dataKey:"glucose",domain:[80,120],tick:{fontSize:10,fill:C.dim}}),React.createElement(Tooltip,{...tt}),React.createElement(Scatter,{data:sgd,fill:C.purp})));
-  else if(ch==="bp")chart=React.createElement(ResponsiveContainer,{width:"100%",height:"100%"},React.createElement(LineChart,{data:bpd},React.createElement(CartesianGrid,{strokeDasharray:"3 3",stroke:C.bdr}),React.createElement(XAxis,{dataKey:"date",...xa}),React.createElement(YAxis,{domain:[60,130],tick:{fontSize:10,fill:C.dim}}),React.createElement(Tooltip,{...tt}),React.createElement(Line,{type:"monotone",dataKey:"sys",stroke:C.rose,strokeWidth:2,dot:{r:2},name:"Systolic"}),React.createElement(Line,{type:"monotone",dataKey:"dia",stroke:C.blue,strokeWidth:2,dot:{r:2},name:"Diastolic"})));
-  else if(ch==="pulse")chart=React.createElement(ResponsiveContainer,{width:"100%",height:"100%"},React.createElement(BarChart,{data:pud},React.createElement(CartesianGrid,{strokeDasharray:"3 3",stroke:C.bdr}),React.createElement(XAxis,{dataKey:"date",...xa}),React.createElement(YAxis,{tick:{fontSize:10,fill:C.dim}}),React.createElement(Tooltip,{...tt}),React.createElement(Bar,{dataKey:"pulse",fill:C.purp,radius:[3,3,0,0],name:"Pulse"}),React.createElement(Bar,{dataKey:"alcohol",fill:C.amber,radius:[3,3,0,0],name:"Alcohol×10"})));
-  else if(ch==="macros")chart=React.createElement(ResponsiveContainer,{width:"100%",height:"100%"},React.createElement(BarChart,{data:mad},React.createElement(CartesianGrid,{strokeDasharray:"3 3",stroke:C.bdr}),React.createElement(XAxis,{dataKey:"date",...xa}),React.createElement(YAxis,{tick:{fontSize:10,fill:C.dim}}),React.createElement(Tooltip,{...tt}),React.createElement(Bar,{dataKey:"protein",fill:C.teal,radius:[2,2,0,0],name:"Protein"}),React.createElement(Bar,{dataKey:"fiber",fill:C.grn,radius:[2,2,0,0],name:"Fiber"})));
-  else if(ch==="weight"&&wtd.length>0)chart=React.createElement(ResponsiveContainer,{width:"100%",height:"100%"},React.createElement(LineChart,{data:wtd},React.createElement(CartesianGrid,{strokeDasharray:"3 3",stroke:C.bdr}),React.createElement(XAxis,{dataKey:"date",...xa}),React.createElement(YAxis,{domain:[175,195],tick:{fontSize:10,fill:C.dim}}),React.createElement(Tooltip,{...tt}),React.createElement(ReferenceLine,{y:180,stroke:C.grn,strokeDasharray:"5 5"}),React.createElement(Line,{type:"monotone",dataKey:"weight",stroke:C.amber,strokeWidth:2,dot:{fill:C.amber,r:4}})));
-  else if(ch==="exercise")chart=React.createElement(ResponsiveContainer,{width:"100%",height:"100%"},React.createElement(BarChart,{data:exd.slice(-30)},React.createElement(CartesianGrid,{strokeDasharray:"3 3",stroke:C.bdr}),React.createElement(XAxis,{dataKey:"date",...xa}),React.createElement(YAxis,{domain:[0,1],tick:false}),React.createElement(Tooltip,{...tt}),React.createElement(Bar,{dataKey:"ex",fill:C.grn,radius:[4,4,0,0],name:"Exercised"})));
-  else if(ch==="sugar")chart=React.createElement(ResponsiveContainer,{width:"100%",height:"100%"},React.createElement(BarChart,{data:sud},React.createElement(CartesianGrid,{strokeDasharray:"3 3",stroke:C.bdr}),React.createElement(XAxis,{dataKey:"date",...xa}),React.createElement(YAxis,{tick:{fontSize:10,fill:C.dim}}),React.createElement(Tooltip,{...tt}),React.createElement(ReferenceLine,{y:20,stroke:C.rose,strokeDasharray:"5 5"}),React.createElement(Bar,{dataKey:"sugar",fill:C.teal,radius:[3,3,0,0],name:"Added Sugar"})));
-  else chart=React.createElement("div",{style:{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",color:C.dim}},"No data yet");
+  // Destructure from window.Recharts at render time (guaranteed loaded here)
+  var R=window.Recharts;
+
+  var gd=history.filter(function(d){return d.g!=null}).map(function(d){return{date:fmtD(d.d),glucose:d.g}});
+  var sgd=history.filter(function(d){return d.g!=null&&d.sl!=null}).map(function(d){return{sleep:d.sl,glucose:d.g}});
+  var bpd=history.filter(function(d){return d.bs!=null}).map(function(d){return{date:fmtD(d.d),sys:d.bs,dia:d.bd}});
+  var pud=history.filter(function(d){return d.pu!=null}).map(function(d){return{date:fmtD(d.d),pulse:d.pu,alcohol:(d.al||0)*10}});
+  var mad=history.filter(function(d){return d.p!=null}).map(function(d){return{date:fmtD(d.d),protein:d.p,fiber:d.fi||0}});
+  var wtd=history.filter(function(d){return d.wt!=null}).map(function(d){return{date:fmtD(d.d),weight:d.wt}});
+  var exd=history.map(function(d){return{date:fmtD(d.d),ex:d.ex?1:0}});
+  var sud=history.filter(function(d){return d.as!=null}).map(function(d){return{date:fmtD(d.d),sugar:d.as}});
+  var tt={contentStyle:{background:C.card,border:"1px solid "+C.bdr,borderRadius:8,fontSize:12,color:C.txt}};
+  var xa={tick:{fontSize:9,fill:C.dim},angle:-45,textAnchor:"end",height:50};
+  var ya10={tick:{fontSize:10,fill:C.dim}};
+  var grid=React.createElement(R.CartesianGrid,{strokeDasharray:"3 3",stroke:C.bdr});
+  var e=React.createElement;
+
+  var chart;
+  if(ch==="glucose")chart=e(R.ResponsiveContainer,{width:"100%",height:"100%"},e(R.LineChart,{data:gd},grid,e(R.XAxis,Object.assign({dataKey:"date"},xa)),e(R.YAxis,{domain:[80,120],tick:ya10.tick}),e(R.Tooltip,tt),e(R.ReferenceLine,{y:100,stroke:C.amber,strokeDasharray:"5 5"}),e(R.Line,{type:"monotone",dataKey:"glucose",stroke:C.teal,strokeWidth:2,dot:{fill:C.teal,r:3}})));
+  else if(ch==="sleepG")chart=e(R.ResponsiveContainer,{width:"100%",height:"100%"},e(R.ScatterChart,null,grid,e(R.XAxis,{dataKey:"sleep",name:"Sleep",unit:"hr",domain:[2,10],tick:ya10.tick}),e(R.YAxis,{dataKey:"glucose",domain:[80,120],tick:ya10.tick}),e(R.Tooltip,tt),e(R.Scatter,{data:sgd,fill:C.purp})));
+  else if(ch==="bp")chart=e(R.ResponsiveContainer,{width:"100%",height:"100%"},e(R.LineChart,{data:bpd},grid,e(R.XAxis,Object.assign({dataKey:"date"},xa)),e(R.YAxis,{domain:[60,130],tick:ya10.tick}),e(R.Tooltip,tt),e(R.Line,{type:"monotone",dataKey:"sys",stroke:C.rose,strokeWidth:2,dot:{r:2},name:"Systolic"}),e(R.Line,{type:"monotone",dataKey:"dia",stroke:C.blue,strokeWidth:2,dot:{r:2},name:"Diastolic"})));
+  else if(ch==="pulse")chart=e(R.ResponsiveContainer,{width:"100%",height:"100%"},e(R.BarChart,{data:pud},grid,e(R.XAxis,Object.assign({dataKey:"date"},xa)),e(R.YAxis,{tick:ya10.tick}),e(R.Tooltip,tt),e(R.Bar,{dataKey:"pulse",fill:C.purp,radius:[3,3,0,0],name:"Pulse"}),e(R.Bar,{dataKey:"alcohol",fill:C.amber,radius:[3,3,0,0],name:"Alcohol×10"})));
+  else if(ch==="macros")chart=e(R.ResponsiveContainer,{width:"100%",height:"100%"},e(R.BarChart,{data:mad},grid,e(R.XAxis,Object.assign({dataKey:"date"},xa)),e(R.YAxis,{tick:ya10.tick}),e(R.Tooltip,tt),e(R.Bar,{dataKey:"protein",fill:C.teal,radius:[2,2,0,0],name:"Protein"}),e(R.Bar,{dataKey:"fiber",fill:C.grn,radius:[2,2,0,0],name:"Fiber"})));
+  else if(ch==="weight"&&wtd.length>0)chart=e(R.ResponsiveContainer,{width:"100%",height:"100%"},e(R.LineChart,{data:wtd},grid,e(R.XAxis,Object.assign({dataKey:"date"},xa)),e(R.YAxis,{domain:[175,195],tick:ya10.tick}),e(R.Tooltip,tt),e(R.ReferenceLine,{y:180,stroke:C.grn,strokeDasharray:"5 5"}),e(R.Line,{type:"monotone",dataKey:"weight",stroke:C.amber,strokeWidth:2,dot:{fill:C.amber,r:4}})));
+  else if(ch==="exercise")chart=e(R.ResponsiveContainer,{width:"100%",height:"100%"},e(R.BarChart,{data:exd.slice(-30)},grid,e(R.XAxis,Object.assign({dataKey:"date"},xa)),e(R.YAxis,{domain:[0,1],tick:false}),e(R.Tooltip,tt),e(R.Bar,{dataKey:"ex",fill:C.grn,radius:[4,4,0,0],name:"Exercised"})));
+  else if(ch==="sugar")chart=e(R.ResponsiveContainer,{width:"100%",height:"100%"},e(R.BarChart,{data:sud},grid,e(R.XAxis,Object.assign({dataKey:"date"},xa)),e(R.YAxis,{tick:ya10.tick}),e(R.Tooltip,tt),e(R.ReferenceLine,{y:20,stroke:C.rose,strokeDasharray:"5 5"}),e(R.Bar,{dataKey:"sugar",fill:C.teal,radius:[3,3,0,0],name:"Added Sugar"})));
+  else chart=e("div",{style:{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",color:C.dim}},"No data yet");
 
   return React.createElement("div",{style:{padding:"12px 16px 100px"}},
     React.createElement("div",{style:{display:"flex",flexWrap:"wrap",gap:4,marginBottom:12}},
-      charts.map(c=>React.createElement("button",{key:c.id,onClick:()=>setCh(c.id),style:{background:ch===c.id?C.teal:C.card,color:ch===c.id?"#fff":C.dim,border:`1px solid ${ch===c.id?C.teal:C.bdr}`,borderRadius:16,padding:"6px 12px",fontSize:11,cursor:"pointer",fontWeight:500}},c.l))
+      charts.map(function(c){return React.createElement("button",{key:c.id,onClick:function(){setCh(c.id)},style:{background:ch===c.id?C.teal:C.card,color:ch===c.id?"#fff":C.dim,border:"1px solid "+(ch===c.id?C.teal:C.bdr),borderRadius:16,padding:"6px 12px",fontSize:11,cursor:"pointer",fontWeight:500}},c.l)})
     ),
-    React.createElement("div",{style:{background:C.card,borderRadius:12,padding:"12px 8px 12px 0",border:`1px solid ${C.bdr}`,height:280}},chart)
+    React.createElement("div",{style:{background:C.card,borderRadius:12,padding:"12px 8px 12px 0",border:"1px solid "+C.bdr,height:280}},chart)
   );
 }
 
@@ -544,10 +549,10 @@ function SettingsTab({history,setHistory}){
     React.createElement("div",{style:{background:C.card,borderRadius:10,padding:14,border:`1px solid ${hasSyncKey?C.grn+"60":C.amber+"60"}`}},
       React.createElement("div",{style:{fontSize:13,fontWeight:600,marginBottom:6}},"☁️ Cloud Sync"),
       hasSyncKey?React.createElement("div",null,
-        React.createElement("div",{style:{fontSize:12,color:C.grn,marginBottom:8}},"✓ Syncing with key: "+getSyncKey().substring(0,8)+"..."),
+        React.createElement("div",{style:{fontSize:12,color:C.grn,marginBottom:8}},"✓ Syncing with key: "+getSyncKey()),
         React.createElement("div",{style:{fontSize:11,color:C.dim,marginBottom:8}},"Use the same sync key on your other devices to keep data in sync."),
         React.createElement("div",{style:{display:"flex",gap:8}},
-          React.createElement(Btn,{onClick:async()=>{setStatus("Pulling from cloud...");const r=await DB.pullAll();if(r){if(r.history){setHistory(r.history);LS.set("history",r.history);setHasHist(true)}if(r.profile){LS.set("profile",r.profile);setHasProfile(true)}setStatus("✓ Synced from cloud!")}else{setStatus("No cloud data found")}setTimeout(()=>setStatus(""),3000)},color:C.blue,style:{fontSize:12}},["⬇ Pull from Cloud"]),
+          React.createElement(Btn,{onClick:async()=>{var sk=getSyncKey();setStatus("Pulling from cloud... (key: "+sk+")");try{var url=FB_URL+"/users/"+sk+".json";var resp=await fetch(url);var r=await resp.json();if(r&&typeof r==="object"&&Object.keys(r).length>0){var count=0;if(r.history){setHistory(r.history);LS.set("history",r.history);setHasHist(true);count=r.history.length}if(r.profile){LS.set("profile",r.profile);setHasProfile(true)}setStatus("✓ Synced! "+count+" days of history loaded.")}else{setStatus("⚠ No data found at key: "+sk+". Make sure you used the same passphrase on both devices.")}}catch(err){setStatus("❌ Error: "+err.message)}setTimeout(()=>setStatus(""),6000)},color:C.blue,style:{fontSize:12}},["⬇ Pull from Cloud"]),
           React.createElement(Btn,{onClick:()=>{if(confirm("Remove sync key? Data stays on this device but stops syncing.")){localStorage.removeItem("ph_sync_key");setHasSyncKey(false)}},color:C.rose,outline:true,style:{fontSize:12}},["Disconnect"])
         )
       ):React.createElement("div",null,
