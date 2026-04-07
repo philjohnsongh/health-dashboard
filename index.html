@@ -1637,7 +1637,29 @@ function SettingsTab({history,setHistory}){
     // Clear data
     React.createElement("div",{style:{background:C.card,borderRadius:10,padding:14,border:`1px solid ${C.bdr}`}},
       React.createElement("div",{style:{fontSize:16,fontWeight:600,marginBottom:10}},"Clear Data"),
-      React.createElement(Btn,{onClick:()=>{if(confirm("⚠️ Clear ALL health data?\n\nThis will delete:\n• All history\n• Today's readings\n• Meals, exercise log, supplements\n• Profile and food reference\n\nThis CANNOT be undone.")){if(confirm("Are you absolutely sure? Tap OK to permanently delete everything.")){Object.keys(localStorage).filter(k=>k.startsWith("ph_")).forEach(k=>localStorage.removeItem(k));setStatus("Data cleared. Refresh page.");setHasHist(false);setHasProfile(false);setHasFoodref(false)}}},color:C.rose,outline:true,style:{fontSize:14}},["Clear All Data"])
+      React.createElement("div",{style:{fontSize:13,color:C.dim,marginBottom:10,lineHeight:1.4}},"Local-only clear wipes this device. Cloud reset wipes Firebase too — use this only when starting completely fresh."),
+      React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:8}},
+        React.createElement(Btn,{onClick:()=>{if(confirm("⚠️ Clear ALL LOCAL health data?\n\nThis will delete from this device only:\n• All history\n• Today's readings\n• Meals, exercise log, supplements\n• Profile and food reference\n\nCloud data is NOT affected — next sync will restore everything.\n\nProceed?")){if(confirm("Are you absolutely sure? Tap OK to permanently delete local data.")){Object.keys(localStorage).filter(k=>k.startsWith("ph_")).forEach(k=>localStorage.removeItem(k));setStatus("✓ Local data cleared. Refresh page or pull from cloud to restore.");setHasHist(false);setHasProfile(false);setHasFoodref(false)}}},color:C.amber,outline:true,style:{fontSize:13}},["⚠️ Clear Local Only"]),
+        // Cloud sledgehammer — wipes everything in Firebase too
+        React.createElement(Btn,{onClick:async()=>{
+          const sk=getSyncKey();
+          if(!sk){setStatus("No sync key set — nothing to reset in cloud.");return}
+          if(!confirm("🚨 RESET CLOUD DATA?\n\nThis will:\n• Save a final backup to cloud slot first (1-time safety)\n• DELETE everything in /users/"+sk+" on Firebase\n• Clear all local data on this device\n• Leave you with a clean slate for fresh import\n\nThe backup will be at /users/"+sk+"_backup_b1 or _b2.\n\nProceed?"))return;
+          if(!confirm("⚠️⚠️ FINAL CONFIRMATION ⚠️⚠️\n\nType-of-thing-you-can't-undo. The backup gives you ONE chance to restore. After that, the data is gone.\n\nLast chance to cancel. Tap OK to nuke."))return;
+          setStatus("⏳ Saving final backup before reset...");
+          try{
+            const slot=await saveCloudBackup();
+            setStatus("⏳ Deleting cloud data...");
+            // DELETE the user node entirely (Firebase REST API supports DELETE)
+            await fetch(`${FB_URL}/users/${sk}.json`,{method:"DELETE"});
+            // Clear local
+            Object.keys(localStorage).filter(k=>k.startsWith("ph_")&&k!=="ph_sync_key"&&k!=="ph_api_key").forEach(k=>localStorage.removeItem(k));
+            setHasHist(false);setHasProfile(false);setHasFoodref(false);
+            setHistory([]);
+            setStatus(`✓ CLOUD RESET COMPLETE. Final backup saved to slot ${slot||"(failed)"}. Sync key and API key preserved. Ready for fresh import.`);
+          }catch(err){setStatus("❌ Reset error: "+err.message)}
+        },color:C.rose,outline:true,style:{fontSize:13}},["🚨 RESET CLOUD + LOCAL (sledgehammer)"])
+      )
     ),
 
     // Status message
