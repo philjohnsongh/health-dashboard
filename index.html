@@ -64,8 +64,26 @@ const QMEALS=[
 {id:"milk",n:"Whole Milk (8 oz)",cal:149,p:8,ep:8,ca:12,fi:0,as:0,su:12,fa:8,sf:4.9,na:105,k:300},
 ];
 
+// Master exercise list — everything Phil might do in a day. Flat list, no presets.
+// Fill in sets/reps/weight on whatever rows were done today, tap Log, repeat later as needed.
+const ALL_EXERCISES=[
+  "Bench Press",
+  "Incline Press",
+  "Chest Fly",
+  "Shoulder Press",
+  "Triceps Extension",
+  "Chin-ups (assist)",
+  "Lat Pulldown",
+  "Rows",
+  "Bicep Curls",
+  "Squats",
+  "Calf Raises",
+  "1-mile Run",
+  "Zone 2 Walk",
+];
+
+// Exercise routines — defaults reflect current milestones (Apr 2026)
 const HIST=[];
-// Historical data is imported via Settings tab — not stored in code
 
 const DEFAULT_PROFILE="Health tracking dashboard. Import your health profile via Settings > Import Data to enable personalized AI chat.";
 // Profile loaded from localStorage after import
@@ -113,7 +131,83 @@ const DB={
 
 const todayStr=()=>new Date().toISOString().split("T")[0];
 const fmtD=d=>{const dt=new Date(d+"T12:00:00");return dt.toLocaleDateString("en-US",{month:"short",day:"numeric"})};
+// Format a JS timestamp (ISO string) to "9:10 AM"
+const fmtTime=ts=>{if(!ts)return"";try{const d=new Date(ts);return d.toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"})}catch{return""}};
+
+// P5 — Daily rollover. Scans localStorage for any ph_today_YYYY-MM-DD keys from
+// past dates, converts them to history entries, merges into history (dedup by date),
+// deletes the stale keys locally AND remotely. Returns updated history array.
+// Also accepts a `remote` object (from DB.pullAll) to catch any remote-only past-day data.
+function rolloverPastDays(currentHistory,remote){
+  const today=todayStr();
+  const candidates=[]; // {date, data}
+  // Local scan
+  try{
+    for(let i=0;i<localStorage.length;i++){
+      const k=localStorage.key(i);
+      if(k&&k.startsWith("ph_today_")){
+        const date=k.replace("ph_today_","");
+        if(date<today){
+          try{const data=JSON.parse(localStorage.getItem(k));if(data)candidates.push({date,data,localKey:k})}catch{}
+        }
+      }
+    }
+  }catch{}
+  // Remote scan (from pulled Firebase object)
+  if(remote&&typeof remote==="object"){
+    Object.keys(remote).forEach(k=>{
+      if(k.startsWith("today_")){
+        const date=k.replace("today_","");
+        if(date<today&&remote[k]){
+          // Skip if already captured from local
+          if(!candidates.some(c=>c.date===date))candidates.push({date,data:remote[k],remoteOnly:true});
+        }
+      }
+    });
+  }
+  if(candidates.length===0)return currentHistory;
+
+  const existingDates=new Set((currentHistory||[]).map(h=>h.d));
+  const newEntries=[];
+  const sk=getSyncKey();
+  candidates.forEach(({date,data,localKey})=>{
+    if(!existingDates.has(date)){
+      const entry={d:date,...data};
+      newEntries.push(entry);
+      existingDates.add(date);
+    }
+    // Clean local
+    if(localKey){
+      try{localStorage.removeItem(localKey);localStorage.removeItem("ph_supps_"+date)}catch{}
+    }
+    // Clean remote (best-effort, async, don't block)
+    if(sk){
+      try{fetch(`${FB_URL}/users/${sk}/today_${date}.json`,{method:"DELETE"}).catch(()=>{})}catch{}
+      try{fetch(`${FB_URL}/users/${sk}/supps_${date}.json`,{method:"DELETE"}).catch(()=>{})}catch{}
+    }
+  });
+
+  if(newEntries.length===0)return currentHistory;
+  const updated=[...(currentHistory||[]),...newEntries].sort((a,b)=>a.d.localeCompare(b.d));
+  // Persist via DB (writes to both local + Firebase)
+  DB.set("history",updated);
+  return updated;
+}
 const predictG=(sl,st,as,al,ex)=>{let g=90;if(sl<6)g+=13;else if(sl<7)g+=8;else if(sl<7.5)g+=5;else if(sl<8)g+=2;g+=Math.min((st||4)-2,5);g+=Math.min(Math.max((as||0)-10,0)/4,5);g+=Math.min((al||0)*2.5,8);if(ex)g-=7;return Math.round(g)};
+
+// Phil's BP protocol (from Health Plan v17): Omron upper-arm, 5-min rest,
+// discard 1st reading, average 2nd+3rd. Stop at 2 if first is calm.
+// Implementation: 1 reading = use it; 2 readings = average both; 3+ = discard 1st, average rest.
+function bpAverage(readings){
+  if(!readings||readings.length===0)return null;
+  let used;
+  if(readings.length===1)used=readings;
+  else if(readings.length===2)used=readings;
+  else used=readings.slice(1); // 3+: discard first
+  const n=used.length;
+  const avg=(field)=>{const vals=used.map(r=>+r[field]).filter(v=>!isNaN(v));if(vals.length===0)return null;return Math.round(vals.reduce((a,b)=>a+b,0)/vals.length)};
+  return {s:avg("s"),d:avg("d"),p:avg("p"),n,total:readings.length};
+}
 
 // ============================================================
 // AI MEAL ANALYSIS (Priority 1 — v2)
@@ -212,12 +306,19 @@ function Metric({label,value,unit,target,isMax,color}){
   );
 }
 
-function SuppCard({s,done,onTap}){
-  return React.createElement("div",{onClick:onTap,style:{background:done?C.card2:C.card,borderRadius:12,padding:"14px 14px",border:`1px solid ${done?C.grn+"60":C.bdr}`,cursor:"pointer",opacity:done?0.65:1,display:"flex",alignItems:"center",gap:12}},
-    React.createElement("div",{style:{width:36,height:36,borderRadius:18,background:done?C.grn:C.card2,display:"flex",alignItems:"center",justifyContent:"center",fontSize:done?18:20,flexShrink:0,color:done?"#fff":undefined}},done?"✓":s.icon),
-    React.createElement("div",{style:{flex:1,minWidth:0}},
-      React.createElement("div",{style:{fontSize:15,fontWeight:600,color:done?C.dim:C.txt}},s.name),
-      React.createElement("div",{style:{fontSize:13,color:C.dim}},s.time)
+function SuppCard({s,done,onTap,expanded}){
+  return React.createElement("div",{onClick:onTap,style:{background:done?C.card2:(expanded?C.amber+"15":C.card),borderRadius:12,padding:"14px 14px",border:`${expanded?2:1}px solid ${done?C.grn+"60":(expanded?C.amber:C.bdr)}`,cursor:"pointer",opacity:done?0.65:1,display:"flex",flexDirection:"column",gap:8}},
+    React.createElement("div",{style:{display:"flex",alignItems:"center",gap:12}},
+      React.createElement("div",{style:{width:36,height:36,borderRadius:18,background:done?C.grn:C.card2,display:"flex",alignItems:"center",justifyContent:"center",fontSize:done?18:20,flexShrink:0,color:done?"#fff":undefined}},done?"✓":s.icon),
+      React.createElement("div",{style:{flex:1,minWidth:0}},
+        React.createElement("div",{style:{fontSize:15,fontWeight:600,color:done?C.dim:C.txt}},s.name),
+        React.createElement("div",{style:{fontSize:13,color:C.dim}},s.time)
+      )
+    ),
+    expanded&&React.createElement("div",{style:{paddingTop:8,borderTop:`1px solid ${C.amber}40`,fontSize:14,color:C.txt,lineHeight:1.5}},
+      React.createElement("div",{style:{fontSize:11,color:C.amber,fontWeight:700,marginBottom:4}},"INCLUDES"),
+      React.createElement("div",null,s.items),
+      React.createElement("div",{style:{marginTop:8,fontSize:12,color:C.amber,fontWeight:600,textAlign:"center"}},"Tap again to mark taken ✓")
     )
   );
 }
@@ -233,6 +334,101 @@ function Inp({label,value,onChange,placeholder,unit,type}){
 
 function Btn({children,onClick,color,outline,style:s}){
   return React.createElement("button",{onClick,style:{background:outline?"transparent":(color||C.teal),color:outline?(color||C.teal):"#fff",border:outline?`1px solid ${color||C.teal}`:"none",borderRadius:10,padding:"14px 20px",fontSize:15,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:8,...s}},children);
+}
+
+// ============================================================
+// TIME PICKER (scroll-wheel style, P4)
+// ============================================================
+// Two scroll columns (hour, minute) + AM/PM toggle. Initializes to current time
+// or the parsed `value` prop. Calls onChange("H:MM AM") whenever selection changes.
+function TimePicker({value,onChange}){
+  const parseTime=v=>{
+    const now=new Date();
+    if(!v)return {h:now.getHours()%12||12,m:now.getMinutes(),ap:now.getHours()>=12?"PM":"AM"};
+    const match=String(v).match(/(\d+):(\d+)\s*(AM|PM)?/i);
+    if(!match)return {h:now.getHours()%12||12,m:now.getMinutes(),ap:now.getHours()>=12?"PM":"AM"};
+    let h=+match[1],m=+match[2];
+    let ap=match[3]?match[3].toUpperCase():(h>=12?"PM":"AM");
+    if(h>12)h=h-12;
+    if(h===0)h=12;
+    return {h,m,ap};
+  };
+  const init=parseTime(value);
+  const [h,setH]=useState(init.h);
+  const [m,setM]=useState(init.m);
+  const [ap,setAp]=useState(init.ap);
+  const hRef=useRef(null);
+  const mRef=useRef(null);
+  const ROW=40;
+
+  // Position scroll columns to initial values on mount
+  useEffect(()=>{
+    if(hRef.current)hRef.current.scrollTop=(init.h-1)*ROW;
+    if(mRef.current)mRef.current.scrollTop=init.m*ROW;
+  },[]);
+
+  // Push selection back up whenever it changes
+  useEffect(()=>{
+    onChange(`${h}:${String(m).padStart(2,"0")} ${ap}`);
+  },[h,m,ap]);
+
+  const hours=Array.from({length:12},(_,i)=>i+1);
+  const minutes=Array.from({length:60},(_,i)=>i);
+
+  const onScrollCol=(items,setter)=>e=>{
+    const el=e.currentTarget;
+    clearTimeout(el._timer);
+    el._timer=setTimeout(()=>{
+      const idx=Math.round(el.scrollTop/ROW);
+      const clamped=Math.max(0,Math.min(idx,items.length-1));
+      const val=items[clamped];
+      if(val!=null)setter(val);
+      // Snap to exact row position in case scroll-snap didn't finish
+      const target=clamped*ROW;
+      if(Math.abs(el.scrollTop-target)>2){el.scrollTop=target}
+    },140);
+  };
+
+  const colStyle={height:ROW*4,overflowY:"scroll",scrollSnapType:"y mandatory",flex:1,textAlign:"center",fontFamily:"monospace",WebkitOverflowScrolling:"touch"};
+  const rowStyle=active=>({height:ROW,lineHeight:ROW+"px",scrollSnapAlign:"center",color:active?C.teal:C.dim,fontWeight:active?700:400,fontSize:active?24:20,transition:"color 0.15s,font-size 0.15s"});
+  const padStyle={height:ROW*1.5};
+
+  const setNow=()=>{
+    const now=new Date();
+    const nh=now.getHours()%12||12;
+    const nm=now.getMinutes();
+    const nap=now.getHours()>=12?"PM":"AM";
+    setH(nh);setM(nm);setAp(nap);
+    if(hRef.current)hRef.current.scrollTop=(nh-1)*ROW;
+    if(mRef.current)mRef.current.scrollTop=nm*ROW;
+  };
+
+  return React.createElement("div",{style:{background:C.card2,borderRadius:10,padding:10,border:`1px solid ${C.bdr}`}},
+    React.createElement("div",{style:{display:"flex",gap:8,position:"relative",alignItems:"stretch"}},
+      // Center highlight band (non-interactive overlay)
+      React.createElement("div",{style:{position:"absolute",top:ROW*1.5,left:0,right:0,height:ROW,background:C.teal+"15",borderTop:`1px solid ${C.teal}50`,borderBottom:`1px solid ${C.teal}50`,pointerEvents:"none",borderRadius:4}}),
+      // Hour column
+      React.createElement("div",{ref:hRef,onScroll:onScrollCol(hours,setH),style:colStyle},
+        React.createElement("div",{style:padStyle}),
+        hours.map(i=>React.createElement("div",{key:i,style:rowStyle(i===h)},i)),
+        React.createElement("div",{style:padStyle})
+      ),
+      React.createElement("div",{style:{alignSelf:"center",fontSize:24,color:C.dim,fontFamily:"monospace"}},":"),
+      // Minute column
+      React.createElement("div",{ref:mRef,onScroll:onScrollCol(minutes,setM),style:colStyle},
+        React.createElement("div",{style:padStyle}),
+        minutes.map(i=>React.createElement("div",{key:i,style:rowStyle(i===m)},String(i).padStart(2,"0"))),
+        React.createElement("div",{style:padStyle})
+      ),
+      // AM/PM toggle
+      React.createElement("div",{style:{display:"flex",flexDirection:"column",justifyContent:"center",gap:6,paddingLeft:4}},
+        ["AM","PM"].map(x=>React.createElement("button",{key:x,onClick:()=>setAp(x),
+          style:{padding:"12px 14px",background:ap===x?C.teal:C.bg,border:`1px solid ${ap===x?C.teal:C.bdr}`,borderRadius:6,color:ap===x?"#fff":C.dim,fontSize:14,fontWeight:700,cursor:"pointer",minWidth:52}},x))
+      )
+    ),
+    React.createElement("button",{onClick:setNow,
+      style:{marginTop:10,width:"100%",background:"transparent",border:`1px solid ${C.teal}60`,borderRadius:6,padding:"8px",color:C.teal,fontSize:13,cursor:"pointer",fontFamily:"inherit"}},"⏱ Set to now")
+  );
 }
 
 // ============================================================
@@ -277,13 +473,28 @@ function AIMealPreview({items,notes,onConfirm,onCancel}){
 // ============================================================
 // TODAY TAB
 // ============================================================
-function TodayTab({data,setData,supps,setSupps,addMeal,addReading}){
+function TodayTab({data,setData,supps,setSupps,addMeal,addReading,history}){
   const [et,setEt]=useState(null);
   const [gv,setGv]=useState("");const [gt,setGt]=useState("");
-  const [bs,setBs]=useState("");const [bd,setBd]=useState("");const [bp,setBp]=useState("");
+  const [bs,setBs]=useState("");const [bd,setBd]=useState("");const [bp,setBp]=useState("");const [bpt,setBpt]=useState("");
   const [sh,setSh]=useState("");const [sc,setSc]=useState("");
+  const [sdeep,setSdeep]=useState("");const [srem,setSrem]=useState("");const [slight,setSlight]=useState("");
+  const [sshr,setSshr]=useState("");const [sbed,setSbed]=useState("");const [swake,setSwake]=useState("");
   const [wv,setWv]=useState("");const [mt,setMt]=useState("");
   const [sq,setSq]=useState(false);const [av,setAv]=useState("");
+  const [exRows,setExRows]=useState(ALL_EXERCISES.map(n=>({n,s:"",r:"",w:"",_def:null})));
+
+  // When the exercise form opens, rebuild rows from master list + any custom exercises
+  // previously saved in ex_defaults, attaching each row's _def so prefill + placeholders work.
+  useEffect(()=>{
+    if(et==="exercise"){
+      const defaults=DB.get("ex_defaults")||{};
+      const names=[];
+      ALL_EXERCISES.forEach(n=>{if(!names.includes(n))names.push(n)});
+      Object.keys(defaults).forEach(n=>{if(!names.includes(n))names.push(n)});
+      setExRows(names.map(n=>({n,s:"",r:"",w:"",_def:defaults[n]||null})));
+    }
+  },[et]);
   const [recording,setRecording]=useState(false);
   const [aiLoading,setAiLoading]=useState(false);
   const [aiPreview,setAiPreview]=useState(null);
@@ -292,6 +503,7 @@ function TodayTab({data,setData,supps,setSupps,addMeal,addReading}){
   const recognitionRef=useRef(null);
   const pending=SUPPS.filter(s=>!supps[s.id]);
   const calT=data.ex?2000:1800;
+  const [expandedSupp,setExpandedSupp]=useState(null);
 
   const startVoice=()=>{
     var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
@@ -326,14 +538,50 @@ function TodayTab({data,setData,supps,setSupps,addMeal,addReading}){
     setAiPreview(null);setMt("");setAiError("");
   };
 
-  const save=(type,vals)=>{addReading({type,...vals});setEt(null);setGv("");setGt("");setBs("");setBd("");setBp("");setSh("");setSc("");setWv("");setAv("")};
+  const updateEx=(i,f,v)=>{const n=[...exRows];n[i]={...n[i],[f]:v};setExRows(n)};
+  const addExRow=()=>setExRows([...exRows,{n:"",s:"",r:"",w:"",_def:null}]);
+  const removeExRow=i=>setExRows(exRows.filter((_,j)=>j!==i));
+  const prefillRow=i=>{const n=[...exRows];const d=n[i]._def;if(d){n[i]={...n[i],s:d.s||"",r:d.r||"",w:d.w||""};setExRows(n)}};
+  const resetExRows=()=>{
+    const defaults=DB.get("ex_defaults")||{};
+    const names=[];
+    ALL_EXERCISES.forEach(n=>{if(!names.includes(n))names.push(n)});
+    Object.keys(defaults).forEach(n=>{if(!names.includes(n))names.push(n)});
+    setExRows(names.map(n=>({n,s:"",r:"",w:"",_def:defaults[n]||null})));
+  };
+  const logWorkout=()=>{
+    // Log any row that has a name AND at least one of sets/reps/weight filled in
+    const valid=exRows.filter(r=>r.n&&r.n.trim()&&(r.s||r.r||r.w));
+    if(valid.length===0)return;
+    const entries=valid.map(r=>({n:r.n.trim(),s:r.s||"",r:r.r||"",w:r.w||"",t:new Date().toISOString()}));
+    setData(p=>({...p,ex:true,exLog:[...(p.exLog||[]),...entries]}));
+    save("exercise",{done:true,count:entries.length});
+    // Save these values as the new defaults for each logged exercise
+    const defaults=DB.get("ex_defaults")||{};
+    entries.forEach(e=>{defaults[e.n]={s:e.s,r:e.r,w:e.w}});
+    DB.set("ex_defaults",defaults);
+    // Reset form so Phil can come back later and log another round
+    resetExRows();
+  };
+
+  const save=(type,vals)=>{addReading({type,...vals});setGv("");setGt("");setBs("");setBd("");setBp("");setBpt("");setSh("");setSc("");setSdeep("");setSrem("");setSlight("");setSshr("");setSbed("");setSwake("");setWv("");setAv("")};
 
   const els=[
     // Supplement reminders
     pending.length>0&&React.createElement("div",{key:"supp"},
       React.createElement("div",{style:{fontSize:15,fontWeight:600,color:C.amber,marginBottom:6}},`⏰ SUPPLEMENTS REMAINING (${pending.length})`),
       React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}},
-        pending.map(s=>React.createElement(SuppCard,{key:s.id,s,done:false,onTap:()=>setSupps(p=>({...p,[s.id]:true}))}))
+        pending.map(s=>React.createElement(SuppCard,{key:s.id,s,done:false,expanded:expandedSupp===s.id,
+          onTap:()=>{
+            if(expandedSupp===s.id){
+              // Second tap on the same expanded card → mark taken and collapse
+              setSupps(p=>({...p,[s.id]:true}));
+              setExpandedSupp(null);
+            }else{
+              // First tap (or switching from another) → expand to show ingredients
+              setExpandedSupp(s.id);
+            }
+          }}))
       )
     ),
     pending.length===0&&React.createElement("div",{key:"suppdone",style:{background:C.grn+"20",border:`1px solid ${C.grn}40`,borderRadius:10,padding:"12px 14px",fontSize:15,color:C.grn,textAlign:"center"}},"✓ All supplements taken today"),
@@ -362,69 +610,190 @@ function TodayTab({data,setData,supps,setSupps,addMeal,addReading}){
 
     // Entry buttons
     React.createElement("div",{key:"btns"},
-      React.createElement("div",{style:{fontSize:15,fontWeight:600,color:C.dim,marginBottom:6}},"LOG DATA"),
-      React.createElement("div",{style:{display:"flex",flexWrap:"wrap",gap:6}},
+      React.createElement("div",{style:{fontSize:15,fontWeight:600,color:C.dim,marginBottom:8}},"LOG AND SHOW DAILY DATA"),
+      React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}},
         [["glucose","🩸 Glucose"],["bp","💓 BP"],["sleep","😴 Sleep"],["stress","🧠 Stress"],["weight","⚖️ Weight"],["meal","🍽️ Meal"],["exercise","💪 Exercise"],["alcohol","🍺 Alcohol"]].map(([k,l])=>
-          React.createElement("button",{key:k,onClick:()=>setEt(et===k?null:k),style:{background:et===k?C.teal:C.card,color:et===k?"#fff":C.txt,border:`1px solid ${et===k?C.teal:C.bdr}`,borderRadius:20,padding:"10px 16px",fontSize:14,fontWeight:500,cursor:"pointer"}},l)
+          React.createElement("button",{key:k,onClick:()=>setEt(et===k?null:k),style:{background:et===k?C.teal:C.card,color:et===k?"#fff":C.txt,border:`1.5px solid ${et===k?C.teal:C.bdr}`,borderRadius:14,padding:"20px 16px",fontSize:18,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:4}},l)
         )
       )
     ),
 
     // Glucose form
     et==="glucose"&&React.createElement("div",{key:"f_g",style:{background:C.card,borderRadius:12,padding:14,border:`1px solid ${C.bdr}`}},
-      React.createElement("div",{style:{fontSize:16,fontWeight:600,marginBottom:10}},"Log Glucose"),
+      React.createElement("div",{style:{fontSize:16,fontWeight:600,marginBottom:10}},"Add Glucose Reading"),
       React.createElement(Inp,{label:"Reading",value:gv,onChange:setGv,placeholder:"96",unit:"mg/dL"}),
-      React.createElement(Inp,{label:"Time",value:gt,onChange:setGt,type:"text",placeholder:"9:10 AM"}),
-      React.createElement(Btn,{onClick:()=>{if(gv){setData(p=>({...p,g:+gv}));save("glucose",{v:+gv,t:gt})}}},["Save"])
+      React.createElement("div",{style:{fontSize:13,color:C.dim,margin:"10px 0 6px",fontWeight:600}},"TIME"),
+      React.createElement(TimePicker,{value:gt,onChange:setGt}),
+      React.createElement("div",{style:{marginTop:12}},
+        React.createElement(Btn,{onClick:()=>{
+          if(!gv)return;
+          const entry={v:+gv,t:gt||"",ts:new Date().toISOString()};
+          setData(p=>{
+            const next=[...(p.gReadings||[]),entry];
+            // Scalar = first reading of day (assumed fasting)
+            return {...p,gReadings:next,g:next[0].v};
+          });
+          setGv("");
+        },color:C.grn,style:{width:"100%",justifyContent:"center"}},["+ Add Reading"])
+      )
     ),
 
-    // BP form
-    et==="bp"&&React.createElement("div",{key:"f_bp",style:{background:C.card,borderRadius:12,padding:14,border:`1px solid ${C.bdr}`}},
-      React.createElement("div",{style:{fontSize:16,fontWeight:600,marginBottom:10}},"Log Blood Pressure"),
-      React.createElement(Inp,{label:"Systolic",value:bs,onChange:setBs,placeholder:"105",unit:"mmHg"}),
-      React.createElement(Inp,{label:"Diastolic",value:bd,onChange:setBd,placeholder:"72",unit:"mmHg"}),
-      React.createElement(Inp,{label:"Pulse",value:bp,onChange:setBp,placeholder:"67",unit:"bpm"}),
-      React.createElement(Btn,{onClick:()=>{if(bs&&bd){setData(p=>({...p,bs:+bs,bd:+bd,pu:+bp}));save("bp",{s:+bs,d:+bd,p:+bp})}}},["Save"])
-    ),
+    // BP form — multi-reading with protocol average (discard 1st, avg 2nd+3rd)
+    et==="bp"&&(()=>{
+      const readings=data.bpReadings||[];
+      const avg=bpAverage(readings);
+      const addReadingBP=()=>{
+        if(!bs||!bd)return;
+        const newReading={s:+bs,d:+bd,p:bp?+bp:null,t:bpt||""};
+        const next=[...readings,newReading];
+        const na=bpAverage(next);
+        setData(p=>({...p,bpReadings:next,bs:na?na.s:null,bd:na?na.d:null,pu:na?na.p:null}));
+        setBs("");setBd("");setBp("");setBpt("");
+      };
+      const removeReading=i=>{
+        const next=readings.filter((_,j)=>j!==i);
+        const na=bpAverage(next);
+        setData(p=>({...p,bpReadings:next,bs:na?na.s:null,bd:na?na.d:null,pu:na?na.p:null}));
+      };
+      return React.createElement("div",{key:"f_bp",style:{background:C.card,borderRadius:12,padding:14,border:`1px solid ${C.bdr}`}},
+        React.createElement("div",{style:{fontSize:16,fontWeight:600,marginBottom:4}},"Log Blood Pressure"),
+        React.createElement("div",{style:{fontSize:12,color:C.dim,marginBottom:10,lineHeight:1.4}},"Protocol: 5-min rest, discard 1st, avg 2nd+3rd. Add each reading below."),
+
+        // Existing readings list
+        readings.length>0&&React.createElement("div",{style:{marginBottom:12}},
+          React.createElement("div",{style:{fontSize:11,color:C.dim,fontWeight:600,marginBottom:6}},`READINGS (${readings.length})`),
+          React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:4}},
+            readings.map((r,i)=>{
+              const isDiscarded=readings.length>=3&&i===0;
+              return React.createElement("div",{key:i,style:{display:"flex",alignItems:"center",gap:8,padding:"10px 12px",background:C.card2,borderRadius:8,border:`1px solid ${isDiscarded?C.rose+"40":C.bdr}`,opacity:isDiscarded?0.55:1}},
+                React.createElement("div",{style:{fontSize:11,color:C.dim,width:20}},`#${i+1}`),
+                React.createElement("div",{style:{flex:1,fontSize:16,fontFamily:"monospace",color:C.txt,fontWeight:600}},`${r.s}/${r.d}${r.p?" • "+r.p+"bpm":""}`),
+                r.t&&React.createElement("div",{style:{fontSize:12,color:C.dim,fontFamily:"monospace"}},r.t),
+                isDiscarded&&React.createElement("div",{style:{fontSize:10,color:C.rose,fontWeight:600}},"DISCARD"),
+                React.createElement("button",{onClick:()=>removeReading(i),style:{background:"none",border:"none",color:C.rose,fontSize:18,cursor:"pointer",padding:"0 4px"}},"✕")
+              );
+            })
+          )
+        ),
+
+        // Protocol average display
+        avg&&React.createElement("div",{style:{marginBottom:12,padding:"12px 14px",background:C.teal+"15",border:`1px solid ${C.teal}60`,borderRadius:10,textAlign:"center"}},
+          React.createElement("div",{style:{fontSize:11,color:C.teal,fontWeight:600,marginBottom:4}},readings.length>=3?"AVERAGE (2nd + 3rd)":readings.length===2?"AVERAGE (both readings)":"SINGLE READING"),
+          React.createElement("div",{style:{fontSize:28,fontFamily:"monospace",fontWeight:700,color:C.teal}},`${avg.s}/${avg.d}${avg.p?" • "+avg.p:""}`),
+          React.createElement("div",{style:{fontSize:11,color:C.dim,marginTop:2}},"This is what's saved to today's record")
+        ),
+
+        // New-reading inputs
+        React.createElement("div",{style:{fontSize:11,color:C.dim,fontWeight:600,marginBottom:4}},`READING #${readings.length+1}`),
+        React.createElement(Inp,{label:"Systolic",value:bs,onChange:setBs,placeholder:"105",unit:"mmHg"}),
+        React.createElement(Inp,{label:"Diastolic",value:bd,onChange:setBd,placeholder:"72",unit:"mmHg"}),
+        React.createElement(Inp,{label:"Pulse",value:bp,onChange:setBp,placeholder:"67",unit:"bpm"}),
+        React.createElement("div",{style:{fontSize:13,color:C.dim,margin:"10px 0 6px",fontWeight:600}},"TIME"),
+        React.createElement(TimePicker,{value:bpt,onChange:setBpt}),
+        React.createElement("div",{style:{display:"flex",gap:8,marginTop:12}},
+          React.createElement(Btn,{onClick:addReadingBP,color:C.grn,style:{flex:1,justifyContent:"center"}},["+ Add Reading"]),
+          React.createElement(Btn,{onClick:()=>setEt(null),outline:true,color:C.dim},["Done"])
+        )
+      );
+    })(),
 
     // Sleep form
     et==="sleep"&&React.createElement("div",{key:"f_sl",style:{background:C.card,borderRadius:12,padding:14,border:`1px solid ${C.bdr}`}},
-      React.createElement("div",{style:{fontSize:16,fontWeight:600,marginBottom:10}},"Log Sleep"),
+      React.createElement("div",{style:{fontSize:16,fontWeight:600,marginBottom:10}},"Log Sleep (from Fitbit)"),
       React.createElement(Inp,{label:"Duration",value:sh,onChange:setSh,placeholder:"8.25",unit:"hrs"}),
       React.createElement(Inp,{label:"Score",value:sc,onChange:setSc,placeholder:"91"}),
-      React.createElement(Btn,{onClick:()=>{if(sh){setData(p=>({...p,sl:+sh,ss:sc?+sc:null}));save("sleep",{h:+sh,sc:sc?+sc:null})}}},["Save"])
+      React.createElement(Inp,{label:"Deep",value:sdeep,onChange:setSdeep,placeholder:"82",unit:"min"}),
+      React.createElement(Inp,{label:"REM",value:srem,onChange:setSrem,placeholder:"115",unit:"min"}),
+      React.createElement(Inp,{label:"Light",value:slight,onChange:setSlight,placeholder:"298",unit:"min"}),
+      React.createElement(Inp,{label:"Sleeping HR",value:sshr,onChange:setSshr,placeholder:"61",unit:"bpm"}),
+      React.createElement(Inp,{label:"Bed time",value:sbed,onChange:setSbed,type:"text",placeholder:"10:45 PM"}),
+      React.createElement(Inp,{label:"Wake time",value:swake,onChange:setSwake,type:"text",placeholder:"7:00 AM"}),
+      React.createElement("div",{style:{fontSize:12,color:C.dim,margin:"8px 0 10px",lineHeight:1.5}},"Duration is the only required field. Leave others blank if not tracking them."),
+      React.createElement(Btn,{onClick:()=>{if(sh){setData(p=>({...p,sl:+sh,ss:sc?+sc:null,deep:sdeep?+sdeep:null,rem:srem?+srem:null,light:slight?+slight:null,shr:sshr?+sshr:null,bed:sbed||null,wake:swake||null}));save("sleep",{h:+sh,sc:sc?+sc:null,deep:sdeep?+sdeep:null,rem:srem?+srem:null,light:slight?+slight:null,shr:sshr?+sshr:null,bed:sbed||null,wake:swake||null})}}},["Save"])
     ),
 
     // Stress form
     et==="stress"&&React.createElement("div",{key:"f_st",style:{background:C.card,borderRadius:12,padding:14,border:`1px solid ${C.bdr}`}},
-      React.createElement("div",{style:{fontSize:16,fontWeight:600,marginBottom:10}},"Waking Stress (1-5)"),
+      React.createElement("div",{style:{fontSize:16,fontWeight:600,marginBottom:10}},"Add Stress Reading (1-5)"),
       React.createElement("div",{style:{display:"flex",gap:6,flexWrap:"wrap"}},
         [1,1.5,2,2.5,3,3.5,4,4.5,5].map(v=>
-          React.createElement("button",{key:v,onClick:()=>{setData(p=>({...p,st:v}));save("stress",{v})},
-            style:{flex:"1 0 auto",minWidth:42,padding:"16px 10px",background:v<=2?C.grn+"30":v<=3.5?C.amber+"30":C.rose+"30",border:`1px solid ${C.bdr}`,borderRadius:10,color:C.txt,fontSize:16,fontWeight:700,cursor:"pointer"}},v)
+          React.createElement("button",{key:v,onClick:()=>{
+            const entry={v,ts:new Date().toISOString()};
+            setData(p=>{
+              const next=[...(p.stReadings||[]),entry];
+              return {...p,stReadings:next,st:next[0].v};
+            });
+          },
+            style:{flex:"1 0 auto",minWidth:42,padding:"18px 10px",background:v<=2?C.grn+"30":v<=3.5?C.amber+"30":C.rose+"30",border:`1px solid ${C.bdr}`,borderRadius:10,color:C.txt,fontSize:18,fontWeight:700,cursor:"pointer"}},v)
         )
       )
     ),
 
     // Weight form
     et==="weight"&&React.createElement("div",{key:"f_wt",style:{background:C.card,borderRadius:12,padding:14,border:`1px solid ${C.bdr}`}},
+      React.createElement("div",{style:{fontSize:16,fontWeight:600,marginBottom:10}},"Add Weight Reading"),
       React.createElement(Inp,{label:"Weight",value:wv,onChange:setWv,placeholder:"188",unit:"lbs"}),
-      React.createElement(Btn,{onClick:()=>{if(wv){setData(p=>({...p,wt:+wv}));save("weight",{v:+wv})}}},["Save"])
+      React.createElement(Btn,{onClick:()=>{
+        if(!wv)return;
+        const entry={v:+wv,ts:new Date().toISOString()};
+        setData(p=>{
+          const next=[...(p.wtReadings||[]),entry];
+          return {...p,wtReadings:next,wt:next[0].v};
+        });
+        setWv("");
+      },color:C.grn,style:{marginTop:10,width:"100%",justifyContent:"center"}},["+ Add Reading"])
     ),
 
     // Alcohol form
     et==="alcohol"&&React.createElement("div",{key:"f_al",style:{background:C.card,borderRadius:12,padding:14,border:`1px solid ${C.bdr}`}},
-      React.createElement("div",{style:{fontSize:16,fontWeight:600,marginBottom:10}},"Log Alcohol"),
+      React.createElement("div",{style:{fontSize:16,fontWeight:600,marginBottom:10}},"Add Alcohol Entry"),
       React.createElement(Inp,{label:"Std Drinks",value:av,onChange:setAv,placeholder:"2.45"}),
       React.createElement("div",{style:{fontSize:13,color:C.dim,marginBottom:10}},"16oz 9.2% beer = 2.45 std drinks. Note: finish by 6:45 PM!"),
-      React.createElement(Btn,{onClick:()=>{if(av){setData(p=>({...p,al:(p.al||0)+ +av}));save("alcohol",{v:+av})}}},["Save"])
+      React.createElement(Btn,{onClick:()=>{
+        if(!av)return;
+        const entry={v:+av,ts:new Date().toISOString()};
+        setData(p=>{
+          const next=[...(p.alReadings||[]),entry];
+          const total=next.reduce((a,r)=>a+(+r.v||0),0);
+          return {...p,alReadings:next,al:total};
+        });
+        setAv("");
+      },color:C.grn,style:{width:"100%",justifyContent:"center"}},["+ Add Entry"])
     ),
 
     // Exercise form
     et==="exercise"&&React.createElement("div",{key:"f_ex",style:{background:C.card,borderRadius:12,padding:14,border:`1px solid ${C.bdr}`}},
-      React.createElement("div",{style:{display:"flex",gap:8}},
-        React.createElement(Btn,{onClick:()=>{setData(p=>({...p,ex:true}));save("exercise",{done:true})},color:C.grn},["✓ Exercise Day"]),
-        React.createElement(Btn,{onClick:()=>{setData(p=>({...p,ex:false}));save("exercise",{done:false})},outline:true,color:C.dim},["Rest Day"])
+      React.createElement("div",{style:{fontSize:16,fontWeight:600,marginBottom:6}},"Log Workout"),
+      React.createElement("div",{style:{fontSize:12,color:C.dim,marginBottom:10,lineHeight:1.4}},"Fill in sets/reps/weight for whatever you did. Leave others blank. Tap ↺ to prefill from your last logged values. Come back later to add more — it all gets appended to today's log."),
+      React.createElement("div",{style:{display:"flex",gap:8,marginBottom:12}},
+        React.createElement(Btn,{onClick:()=>{setData(p=>({...p,ex:false,exLog:[]}));save("exercise",{done:false})},outline:true,color:C.dim,style:{flex:1,justifyContent:"center",fontSize:13}},["Mark Rest Day"])
+      ),
+      React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 40px 40px 56px 24px 24px",gap:5,fontSize:10,color:C.dim,fontWeight:600,padding:"0 2px",marginBottom:4}},
+        React.createElement("div",null,"EXERCISE"),
+        React.createElement("div",{style:{textAlign:"center"}},"SETS"),
+        React.createElement("div",{style:{textAlign:"center"}},"REPS"),
+        React.createElement("div",{style:{textAlign:"center"}},"WEIGHT"),
+        React.createElement("div",null),
+        React.createElement("div",null)
+      ),
+      React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:6,marginBottom:10}},
+        exRows.map((r,i)=>React.createElement("div",{key:i,style:{display:"grid",gridTemplateColumns:"1fr 40px 40px 56px 24px 24px",gap:5,alignItems:"center"}},
+          React.createElement("input",{value:r.n,onChange:e=>updateEx(i,"n",e.target.value),placeholder:"Exercise",
+            style:{background:C.card2,border:`1px solid ${C.bdr}`,borderRadius:6,padding:"10px 10px",color:C.txt,fontSize:14,outline:"none",minWidth:0}}),
+          React.createElement("input",{value:r.s,onChange:e=>updateEx(i,"s",e.target.value),type:"text",inputMode:"numeric",placeholder:r._def&&r._def.s?String(r._def.s):"—",
+            style:{background:C.card2,border:`1px solid ${C.bdr}`,borderRadius:6,padding:"10px 4px",color:C.txt,fontSize:14,outline:"none",textAlign:"center",fontFamily:"monospace",minWidth:0}}),
+          React.createElement("input",{value:r.r,onChange:e=>updateEx(i,"r",e.target.value),type:"text",inputMode:"numeric",placeholder:r._def&&r._def.r?String(r._def.r):"—",
+            style:{background:C.card2,border:`1px solid ${C.bdr}`,borderRadius:6,padding:"10px 4px",color:C.txt,fontSize:14,outline:"none",textAlign:"center",fontFamily:"monospace",minWidth:0}}),
+          React.createElement("input",{value:r.w,onChange:e=>updateEx(i,"w",e.target.value),type:"text",placeholder:r._def&&r._def.w?String(r._def.w):"—",
+            style:{background:C.card2,border:`1px solid ${C.bdr}`,borderRadius:6,padding:"10px 4px",color:C.txt,fontSize:14,outline:"none",textAlign:"center",fontFamily:"monospace",minWidth:0}}),
+          r._def?React.createElement("button",{onClick:()=>prefillRow(i),title:"Prefill from last logged",
+            style:{background:"none",border:`1px solid ${C.teal}60`,borderRadius:4,color:C.teal,fontSize:12,cursor:"pointer",padding:"6px 0",fontWeight:700}},"↺"):React.createElement("div",null),
+          React.createElement("button",{onClick:()=>removeExRow(i),style:{background:"none",border:"none",color:C.rose,fontSize:16,cursor:"pointer",padding:0}},"✕")
+        ))
+      ),
+      React.createElement("div",{style:{display:"flex",gap:6,flexWrap:"wrap"}},
+        React.createElement(Btn,{onClick:addExRow,outline:true,color:C.teal,style:{fontSize:13,padding:"10px 14px"}},["+ Add Exercise"]),
+        React.createElement(Btn,{onClick:logWorkout,color:C.grn,style:{flex:1,justifyContent:"center"}},["💪 Log Workout"])
       )
     ),
 
@@ -468,9 +837,213 @@ function TodayTab({data,setData,supps,setSupps,addMeal,addReading}){
             React.createElement("div",{style:{fontSize:14,color:C.dim}},u)
           )
         )
+      ),
+      (data.deep!=null||data.rem!=null||data.light!=null||data.shr!=null||data.bed||data.wake||data.ss!=null)&&React.createElement("div",{style:{marginTop:10,paddingTop:10,borderTop:`1px solid ${C.bdr}33`}},
+        React.createElement("div",{style:{fontSize:12,color:C.amber,fontWeight:600,marginBottom:6}},"SLEEP DETAIL"),
+        React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:6,fontSize:12,fontFamily:"monospace"}},
+          [["Score",data.ss],["Deep",data.deep!=null?data.deep+"m":null],["REM",data.rem!=null?data.rem+"m":null],["Light",data.light!=null?data.light+"m":null],["SlpHR",data.shr!=null?data.shr:null],["Bed",data.bed],["Wake",data.wake]].filter(([,v])=>v!=null&&v!=="").map(([l,v])=>
+            React.createElement("div",{key:l,style:{textAlign:"center"}},
+              React.createElement("div",{style:{color:C.dim,fontSize:10}},l),
+              React.createElement("div",{style:{color:C.txt,fontSize:13,fontWeight:600}},v)
+            )
+          )
+        )
+      ),
+      data.exLog&&data.exLog.length>0&&React.createElement("div",{style:{marginTop:10,paddingTop:10,borderTop:`1px solid ${C.bdr}33`}},
+        React.createElement("div",{style:{fontSize:12,color:C.grn,fontWeight:600,marginBottom:6}},`💪 WORKOUT — ${data.exLog.length} exercise${data.exLog.length>1?"s":""}`),
+        React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:4}},
+          data.exLog.map((e,i)=>React.createElement("div",{key:i,style:{display:"flex",justifyContent:"space-between",fontSize:13,fontFamily:"monospace",padding:"3px 0"}},
+            React.createElement("span",{style:{color:C.txt}},e.n),
+            React.createElement("span",{style:{color:C.dim}},`${e.s||"-"}×${e.r||"-"}${e.w?" @ "+e.w+(typeof e.w==="number"||/^\d/.test(e.w)?"lb":""):""}`)
+          ))
+        )
       )
     ),
   ].filter(Boolean);
+
+  // ==========================================================
+  // Sub-view mode: when a LOG AND SHOW button is tapped, render a
+  // focused full-screen panel with Back button, history, and entry form.
+  // ==========================================================
+  if(et){
+    const e=React.createElement;
+    const titles={glucose:"🩸 Glucose",bp:"💓 Blood Pressure",sleep:"😴 Sleep",stress:"🧠 Stress",weight:"⚖️ Weight",meal:"🍽️ Meals",exercise:"💪 Exercise",alcohol:"🍺 Alcohol"};
+    // Extract the matching form element from els (keys start with "f_")
+    const formKeys={glucose:"f_g",bp:"f_bp",sleep:"f_sl",stress:"f_st",weight:"f_wt",meal:"f_meal",exercise:"f_ex",alcohol:"f_al"};
+    const formEl=els.find(x=>x&&x.key===formKeys[et]);
+
+    // Build history section based on et
+    let histEl=null;
+    const histBox={background:C.card,borderRadius:12,padding:14,border:`1px solid ${C.bdr}`};
+    const histHead={fontSize:13,color:C.dim,fontWeight:700,marginBottom:10,letterSpacing:0.3};
+    const emptyMsg=m=>e("div",{style:{color:C.dim,fontSize:14,textAlign:"center",padding:"14px 0"}},m);
+    const removeBtn=onClick=>e("button",{onClick,style:{background:"none",border:"none",color:C.rose,fontSize:18,cursor:"pointer",padding:"0 4px"}},"✕");
+
+    if(et==="glucose"){
+      const readings=data.gReadings||[];
+      const remove=i=>{
+        setData(p=>{
+          const next=(p.gReadings||[]).filter((_,j)=>j!==i);
+          return {...p,gReadings:next,g:next.length>0?next[0].v:null};
+        });
+      };
+      histEl=e("div",{style:histBox},
+        e("div",{style:histHead},`TODAY'S GLUCOSE READINGS (${readings.length})`),
+        readings.length===0?emptyMsg("No readings yet"):e("div",{style:{display:"flex",flexDirection:"column",gap:6}},
+          readings.map((r,i)=>e("div",{key:i,style:{display:"flex",alignItems:"center",gap:10,padding:"12px 14px",background:C.card2,borderRadius:8,border:`1px solid ${C.bdr}`}},
+            e("div",{style:{flex:1,fontSize:20,fontFamily:"monospace",color:C.txt,fontWeight:700}},`${r.v}`),
+            e("div",{style:{fontSize:12,color:C.dim}},"mg/dL"),
+            e("div",{style:{fontSize:13,color:C.dim,fontFamily:"monospace"}},r.t||fmtTime(r.ts)),
+            removeBtn(()=>remove(i))
+          ))
+        )
+      );
+    }
+    else if(et==="bp"){
+      const readings=data.bpReadings||[];
+      histEl=e("div",{style:histBox},
+        e("div",{style:histHead},`TODAY'S BP READINGS (${readings.length})`),
+        readings.length===0?emptyMsg("No readings yet"):e("div",{style:{display:"flex",flexDirection:"column",gap:6}},
+          readings.map((r,i)=>{
+            const isDiscarded=readings.length>=3&&i===0;
+            return e("div",{key:i,style:{display:"flex",alignItems:"center",gap:10,padding:"12px 14px",background:C.card2,borderRadius:8,border:`1px solid ${isDiscarded?C.rose+"40":C.bdr}`,opacity:isDiscarded?0.55:1}},
+              e("div",{style:{fontSize:11,color:C.dim,width:20}},`#${i+1}`),
+              e("div",{style:{flex:1,fontSize:18,fontFamily:"monospace",color:C.txt,fontWeight:700}},`${r.s}/${r.d}${r.p?" • "+r.p+"bpm":""}`),
+              r.t&&e("div",{style:{fontSize:12,color:C.dim,fontFamily:"monospace"}},r.t),
+              isDiscarded&&e("div",{style:{fontSize:9,color:C.rose,fontWeight:700}},"DISCARD")
+            );
+          })
+        )
+      );
+    }
+    else if(et==="stress"){
+      const readings=data.stReadings||[];
+      const remove=i=>{
+        setData(p=>{
+          const next=(p.stReadings||[]).filter((_,j)=>j!==i);
+          return {...p,stReadings:next,st:next.length>0?next[0].v:null};
+        });
+      };
+      histEl=e("div",{style:histBox},
+        e("div",{style:histHead},`TODAY'S STRESS READINGS (${readings.length})`),
+        readings.length===0?emptyMsg("No readings yet"):e("div",{style:{display:"flex",flexDirection:"column",gap:6}},
+          readings.map((r,i)=>e("div",{key:i,style:{display:"flex",alignItems:"center",gap:10,padding:"12px 14px",background:C.card2,borderRadius:8,border:`1px solid ${C.bdr}`}},
+            e("div",{style:{flex:1,fontSize:22,fontFamily:"monospace",fontWeight:700,color:r.v<=2?C.grn:r.v<=3.5?C.amber:C.rose}},r.v),
+            e("div",{style:{fontSize:12,color:C.dim}},"/5"),
+            e("div",{style:{fontSize:13,color:C.dim,fontFamily:"monospace"}},fmtTime(r.ts)),
+            removeBtn(()=>remove(i))
+          ))
+        )
+      );
+    }
+    else if(et==="weight"){
+      const readings=data.wtReadings||[];
+      const remove=i=>{
+        setData(p=>{
+          const next=(p.wtReadings||[]).filter((_,j)=>j!==i);
+          return {...p,wtReadings:next,wt:next.length>0?next[0].v:null};
+        });
+      };
+      histEl=e("div",{style:histBox},
+        e("div",{style:histHead},`TODAY'S WEIGHT READINGS (${readings.length})`),
+        readings.length===0?emptyMsg("No readings yet"):e("div",{style:{display:"flex",flexDirection:"column",gap:6}},
+          readings.map((r,i)=>e("div",{key:i,style:{display:"flex",alignItems:"center",gap:10,padding:"12px 14px",background:C.card2,borderRadius:8,border:`1px solid ${C.bdr}`}},
+            e("div",{style:{flex:1,fontSize:20,fontFamily:"monospace",color:C.txt,fontWeight:700}},r.v),
+            e("div",{style:{fontSize:12,color:C.dim}},"lbs"),
+            e("div",{style:{fontSize:13,color:C.dim,fontFamily:"monospace"}},fmtTime(r.ts)),
+            removeBtn(()=>remove(i))
+          ))
+        )
+      );
+    }
+    else if(et==="alcohol"){
+      const readings=data.alReadings||[];
+      const remove=i=>{
+        setData(p=>{
+          const next=(p.alReadings||[]).filter((_,j)=>j!==i);
+          const total=next.reduce((a,r)=>a+(+r.v||0),0);
+          return {...p,alReadings:next,al:total};
+        });
+      };
+      const total=readings.reduce((a,r)=>a+(+r.v||0),0);
+      histEl=e("div",{style:histBox},
+        e("div",{style:histHead},`TODAY'S ALCOHOL ENTRIES (${readings.length})`),
+        readings.length>0&&e("div",{style:{fontSize:14,color:C.amber,fontWeight:600,marginBottom:8,textAlign:"center"}},`Total: ${total.toFixed(2)} std drinks`),
+        readings.length===0?emptyMsg("No entries yet"):e("div",{style:{display:"flex",flexDirection:"column",gap:6}},
+          readings.map((r,i)=>e("div",{key:i,style:{display:"flex",alignItems:"center",gap:10,padding:"12px 14px",background:C.card2,borderRadius:8,border:`1px solid ${C.bdr}`}},
+            e("div",{style:{flex:1,fontSize:18,fontFamily:"monospace",color:C.txt,fontWeight:700}},r.v),
+            e("div",{style:{fontSize:12,color:C.dim}},"drinks"),
+            e("div",{style:{fontSize:13,color:C.dim,fontFamily:"monospace"}},fmtTime(r.ts)),
+            removeBtn(()=>remove(i))
+          ))
+        )
+      );
+    }
+    else if(et==="meal"){
+      const meals=data.meals||[];
+      histEl=e("div",{style:histBox},
+        e("div",{style:histHead},`TODAY'S MEALS (${meals.length})`),
+        meals.length===0?emptyMsg("No meals logged yet"):e("div",{style:{display:"flex",flexDirection:"column",gap:6}},
+          meals.map((m,i)=>e("div",{key:i,style:{padding:"10px 12px",background:C.card2,borderRadius:8,border:`1px solid ${C.bdr}`}},
+            e("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}},
+              e("div",{style:{flex:1,fontSize:14,color:C.txt,fontWeight:600}},m.n||"Item"),
+              e("div",{style:{fontSize:12,color:C.dim,fontFamily:"monospace"}},fmtTime(m.t))
+            ),
+            m.cal!=null&&e("div",{style:{fontSize:11,color:C.dim,fontFamily:"monospace",marginTop:4}},`${Math.round(m.cal||0)}cal • ${Math.round(m.p||0)}p • ${Math.round(m.ca||0)}c • ${Math.round(m.fi||0)}fi • ${Math.round(m.as||0)}as • ${Math.round(m.na||0)}Na`)
+          ))
+        )
+      );
+    }
+    else if(et==="exercise"){
+      const log=data.exLog||[];
+      histEl=e("div",{style:histBox},
+        e("div",{style:histHead},`TODAY'S WORKOUT (${log.length} exercise${log.length!==1?"s":""})`),
+        log.length===0?emptyMsg("No exercises logged yet"):e("div",{style:{display:"flex",flexDirection:"column",gap:4}},
+          log.map((x,i)=>e("div",{key:i,style:{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 12px",background:C.card2,borderRadius:8,border:`1px solid ${C.bdr}`}},
+            e("div",{style:{flex:1,fontSize:14,color:C.txt,fontWeight:600}},x.n),
+            e("div",{style:{fontSize:13,color:C.dim,fontFamily:"monospace"}},`${x.s||"-"}×${x.r||"-"}${x.w?" @ "+x.w+(/^\d/.test(String(x.w))?"lb":""):""}`),
+            e("div",{style:{fontSize:11,color:C.dim,fontFamily:"monospace",marginLeft:8}},fmtTime(x.t))
+          ))
+        )
+      );
+    }
+    else if(et==="sleep"){
+      // Sleep is nightly, so show last 7 days from history
+      const recent=(history||[]).slice(-7).reverse();
+      // Also include today if it has sleep data
+      const todayHasSleep=data.sl!=null;
+      histEl=e("div",{style:histBox},
+        e("div",{style:histHead},"LAST 7 DAYS OF SLEEP"),
+        todayHasSleep&&e("div",{style:{padding:"12px 14px",background:C.teal+"15",borderRadius:8,border:`1px solid ${C.teal}40`,marginBottom:8}},
+          e("div",{style:{fontSize:11,color:C.teal,fontWeight:700,marginBottom:4}},"TODAY (logged)"),
+          e("div",{style:{fontSize:18,fontFamily:"monospace",color:C.txt,fontWeight:700}},`${data.sl}hr${data.ss?" • score "+data.ss:""}`),
+          (data.deep||data.rem||data.light)&&e("div",{style:{fontSize:11,color:C.dim,fontFamily:"monospace",marginTop:4}},`${data.deep?"D "+data.deep+"m ":""}${data.rem?"R "+data.rem+"m ":""}${data.light?"L "+data.light+"m":""}${data.shr?" • HR "+data.shr:""}`)
+        ),
+        recent.length===0?emptyMsg("No history yet"):e("div",{style:{display:"flex",flexDirection:"column",gap:6}},
+          recent.map((d,i)=>d.sl==null?null:e("div",{key:i,style:{padding:"10px 12px",background:C.card2,borderRadius:8,border:`1px solid ${C.bdr}`}},
+            e("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"baseline"}},
+              e("div",{style:{fontSize:12,color:C.dim,fontWeight:600}},fmtD(d.d)),
+              e("div",{style:{fontSize:18,fontFamily:"monospace",color:C.txt,fontWeight:700}},`${d.sl}hr${d.ss?" • "+d.ss:""}`)
+            ),
+            (d.deep||d.rem||d.light||d.shr)&&e("div",{style:{fontSize:11,color:C.dim,fontFamily:"monospace",marginTop:4}},`${d.deep?"D "+d.deep+"m ":""}${d.rem?"R "+d.rem+"m ":""}${d.light?"L "+d.light+"m":""}${d.shr?" • HR "+d.shr:""}`)
+          )).filter(Boolean)
+        )
+      );
+    }
+
+    // Back button + title header
+    const header=e("div",{style:{display:"flex",alignItems:"center",gap:10,marginBottom:4}},
+      e("button",{onClick:()=>setEt(null),
+        style:{background:C.card,border:`1px solid ${C.bdr}`,borderRadius:10,padding:"12px 16px",color:C.teal,fontSize:15,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:6}},"← Back"),
+      e("div",{style:{fontSize:22,fontWeight:700,color:C.txt,flex:1}},titles[et]||"")
+    );
+
+    return e("div",{style:{padding:"12px 16px 100px",display:"flex",flexDirection:"column",gap:14}},
+      header,
+      histEl,
+      formEl
+    );
+  }
 
   return React.createElement("div",{style:{padding:"12px 16px 100px",display:"flex",flexDirection:"column",gap:14}},els);
 }
@@ -481,7 +1054,7 @@ function TodayTab({data,setData,supps,setSupps,addMeal,addReading}){
 function TrendsTab({history}){
   const [ch,setCh]=useState("glucose");
 
-  var charts=[{id:"glucose",l:"Fasting Glucose"},{id:"sleepG",l:"Sleep vs Glucose"},{id:"bp",l:"Blood Pressure"},{id:"pulse",l:"Pulse+Alcohol"},{id:"macros",l:"Protein/Fiber"},{id:"weight",l:"Weight"},{id:"exercise",l:"Exercise"},{id:"sugar",l:"Added Sugar"}];
+  var charts=[{id:"glucose",l:"Fasting Glucose"},{id:"sleepG",l:"Sleep vs Glucose"},{id:"stages",l:"Sleep Stages"},{id:"shr",l:"Sleeping HR"},{id:"bp",l:"Blood Pressure"},{id:"pulse",l:"Pulse+Alcohol"},{id:"macros",l:"Protein/Fiber"},{id:"weight",l:"Weight"},{id:"exercise",l:"Exercise"},{id:"sugar",l:"Added Sugar"}];
 
   if(!window.Recharts)return React.createElement("div",{style:{padding:"12px 16px 100px"}},
     React.createElement("div",{style:{background:C.card,borderRadius:12,padding:20,textAlign:"center",color:C.dim,fontSize:13}},
@@ -505,6 +1078,10 @@ function TrendsTab({history}){
   var wtd=history.filter(function(d){return d.wt!=null}).map(function(d){return{date:fmtD(d.d),weight:d.wt}});
   var exd=history.map(function(d){return{date:fmtD(d.d),ex:d.ex?1:0}});
   var sud=history.filter(function(d){return d.as!=null}).map(function(d){return{date:fmtD(d.d),sugar:d.as}});
+  // Sleep stages: any day that has at least one of deep/rem/light in minutes
+  var stgd=history.filter(function(d){return d.deep!=null||d.rem!=null||d.light!=null}).map(function(d){return{date:fmtD(d.d),deep:d.deep||0,rem:d.rem||0,light:d.light||0}});
+  // Sleeping HR over time
+  var shrd=history.filter(function(d){return d.shr!=null}).map(function(d){return{date:fmtD(d.d),shr:d.shr}});
   var tt={contentStyle:{background:C.card,border:"1px solid "+C.bdr,borderRadius:8,fontSize:12,color:C.txt}};
   var xa={tick:{fontSize:9,fill:C.dim},angle:-45,textAnchor:"end",height:50};
   var ya10={tick:{fontSize:10,fill:C.dim}};
@@ -520,6 +1097,8 @@ function TrendsTab({history}){
   else if(ch==="weight"&&wtd.length>0)chart=e(R.ResponsiveContainer,{width:"100%",height:"100%"},e(R.LineChart,{data:wtd},grid,e(R.XAxis,Object.assign({dataKey:"date"},xa)),e(R.YAxis,{domain:[175,195],tick:ya10.tick}),e(R.Tooltip,tt),e(R.ReferenceLine,{y:180,stroke:C.grn,strokeDasharray:"5 5"}),e(R.Line,{type:"monotone",dataKey:"weight",stroke:C.amber,strokeWidth:2,dot:{fill:C.amber,r:4}})));
   else if(ch==="exercise")chart=e(R.ResponsiveContainer,{width:"100%",height:"100%"},e(R.BarChart,{data:exd.slice(-30)},grid,e(R.XAxis,Object.assign({dataKey:"date"},xa)),e(R.YAxis,{domain:[0,1],tick:false}),e(R.Tooltip,tt),e(R.Bar,{dataKey:"ex",fill:C.grn,radius:[4,4,0,0],name:"Exercised"})));
   else if(ch==="sugar")chart=e(R.ResponsiveContainer,{width:"100%",height:"100%"},e(R.BarChart,{data:sud},grid,e(R.XAxis,Object.assign({dataKey:"date"},xa)),e(R.YAxis,{tick:ya10.tick}),e(R.Tooltip,tt),e(R.ReferenceLine,{y:20,stroke:C.rose,strokeDasharray:"5 5"}),e(R.Bar,{dataKey:"sugar",fill:C.teal,radius:[3,3,0,0],name:"Added Sugar"})));
+  else if(ch==="stages"&&stgd.length>0)chart=e(R.ResponsiveContainer,{width:"100%",height:"100%"},e(R.BarChart,{data:stgd},grid,e(R.XAxis,Object.assign({dataKey:"date"},xa)),e(R.YAxis,{tick:ya10.tick,label:{value:"min",angle:-90,position:"insideLeft",fill:C.dim,fontSize:10}}),e(R.Tooltip,tt),e(R.Legend,{wrapperStyle:{fontSize:11}}),e(R.Bar,{dataKey:"deep",stackId:"a",fill:C.blue,name:"Deep"}),e(R.Bar,{dataKey:"rem",stackId:"a",fill:C.purp,name:"REM"}),e(R.Bar,{dataKey:"light",stackId:"a",fill:C.teal,name:"Light",radius:[3,3,0,0]})));
+  else if(ch==="shr"&&shrd.length>0)chart=e(R.ResponsiveContainer,{width:"100%",height:"100%"},e(R.LineChart,{data:shrd},grid,e(R.XAxis,Object.assign({dataKey:"date"},xa)),e(R.YAxis,{domain:[50,80],tick:ya10.tick,label:{value:"bpm",angle:-90,position:"insideLeft",fill:C.dim,fontSize:10}}),e(R.Tooltip,tt),e(R.ReferenceLine,{y:61,stroke:C.grn,strokeDasharray:"5 5",label:{value:"best",fill:C.grn,fontSize:10}}),e(R.Line,{type:"monotone",dataKey:"shr",stroke:C.amber,strokeWidth:2,dot:{fill:C.amber,r:3},name:"Sleeping HR"})));
   else chart=e("div",{style:{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",color:C.dim}},"No data yet");
 
   return React.createElement("div",{style:{padding:"12px 16px 100px"}},
@@ -800,7 +1379,7 @@ function SettingsTab({history,setHistory}){
 function App(){
   const [tab,setTab]=useState("today");
   const [history,setHistory]=useState([]);
-  const [td,setTd]=useState({cal:0,p:0,ep:0,ca:0,fi:0,as:0,su:0,fa:0,sf:0,na:0,k:0,g:null,bs:null,bd:null,pu:null,sl:null,ss:null,st:null,al:0,ex:false,wt:null,meals:[]});
+  const [td,setTd]=useState({cal:0,p:0,ep:0,ca:0,fi:0,as:0,su:0,fa:0,sf:0,na:0,k:0,g:null,gReadings:[],bs:null,bd:null,pu:null,bpt:null,bpReadings:[],sl:null,ss:null,deep:null,rem:null,light:null,shr:null,bed:null,wake:null,st:null,stReadings:[],al:0,alReadings:[],ex:false,exLog:[],wt:null,wtReadings:[],meals:[]});
   const [supps,setSupps]=useState({});
   const [chatOpen,setChatOpen]=useState(false);
   const [loaded,setLoaded]=useState(false);
@@ -812,9 +1391,11 @@ function App(){
       if(saved)setTd(saved);
       const savedS=DB.get("supps_"+todayStr());
       if(savedS)setSupps(savedS);
-      const h=DB.get("history");
+      let h=DB.get("history");
+      if(!h&&HIST.length>0){DB.set("history",HIST);h=HIST}
+      // Rollover any past-day data sitting in localStorage into history
+      h=rolloverPastDays(h||[],null);
       if(h&&h.length>0)setHistory(h);
-      else if(HIST.length>0){DB.set("history",HIST);setHistory(HIST)}
       setLoaded(true);
       // Then pull from Firebase (may override with newer data)
       if(getSyncKey()){
@@ -822,9 +1403,12 @@ function App(){
         if(remote){
           if(remote["today_"+todayStr()])setTd(remote["today_"+todayStr()]);
           if(remote["supps_"+todayStr()])setSupps(remote["supps_"+todayStr()]);
-          if(remote.history&&remote.history.length>0){setHistory(remote.history);LS.set("history",remote.history)}
+          if(remote.history&&remote.history.length>0){h=remote.history;LS.set("history",h)}
           if(remote.profile)LS.set("profile",remote.profile);
           if(remote.foodref)LS.set("foodref",remote.foodref);
+          // Second rollover pass now that we have remote data
+          h=rolloverPastDays(h||[],remote);
+          if(h&&h.length>0)setHistory(h);
         }
       }
     })();
@@ -857,7 +1441,7 @@ function App(){
     ),
     // Content
     React.createElement("div",{style:{flex:1,overflowY:"auto",paddingBottom:80}},
-      tab==="today"&&React.createElement(TodayTab,{data:td,setData:setTd,supps,setSupps,addMeal,addReading}),
+      tab==="today"&&React.createElement(TodayTab,{data:td,setData:setTd,supps,setSupps,addMeal,addReading,history}),
       tab==="trends"&&React.createElement(TrendsTab,{history}),
       tab==="alerts"&&React.createElement(AlertsTab,{data:td}),
       tab==="protocol"&&React.createElement(ProtocolTab,{supps,setSupps}),
