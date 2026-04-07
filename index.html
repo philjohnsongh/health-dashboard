@@ -27,7 +27,7 @@ input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
 </style>
 </head>
 <body>
-<div id="root"><div style="display:flex;align-items:center;justify-content:center;height:100vh;color:#14b8a6;font-size:16px">Loading dashboard...</div></div>
+<div id="root"></div>
 <script>window.onerror=function(m,u,l){if(m==="Script error."&&l===0)return;document.getElementById("root").innerHTML='<div style="padding:20px;color:#f43f5e;font-size:14px;line-height:1.6"><b>Error:</b><br>'+m+'<br><br>Line: '+l+'<br><br>Make sure you have internet for first load (CDN scripts).</div>';}</script>
 <script type="text/javascript">
 const {useState,useEffect,useRef,useCallback}=React;
@@ -135,346 +135,41 @@ const fmtD=d=>{const dt=new Date(d+"T12:00:00");return dt.toLocaleDateString("en
 // Format a JS timestamp (ISO string) to "9:10 AM"
 const fmtTime=ts=>{if(!ts)return"";try{const d=new Date(ts);return d.toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"})}catch{return""}};
 
-// P5 — Daily rollover. Scans localStorage for any ph_today_YYYY-MM-DD keys from
-// past dates, converts them to history entries, merges into history (dedup by date),
-// deletes the stale keys locally AND remotely. Returns updated history array.
-// Also accepts a `remote` object (from DB.pullAll) to catch any remote-only past-day data.
-function rolloverPastDays(currentHistory,remote){
-  const today=todayStr();
-  const candidates=[]; // {date, data}
-  // Local scan
-  try{
-    for(let i=0;i<localStorage.length;i++){
-      const k=localStorage.key(i);
-      if(k&&k.startsWith("ph_today_")){
-        const date=k.replace("ph_today_","");
-        if(date<today){
-          try{const data=JSON.parse(localStorage.getItem(k));if(data)candidates.push({date,data,localKey:k})}catch{}
-        }
-      }
-    }
-  }catch{}
-  // Remote scan (from pulled Firebase object)
-  if(remote&&typeof remote==="object"){
-    Object.keys(remote).forEach(k=>{
-      if(k.startsWith("today_")){
-        const date=k.replace("today_","");
-        if(date<today&&remote[k]){
-          // Skip if already captured from local
-          if(!candidates.some(c=>c.date===date))candidates.push({date,data:remote[k],remoteOnly:true});
-        }
-      }
-    });
-  }
-  if(candidates.length===0)return currentHistory;
-
-  const existingDates=new Set((currentHistory||[]).map(h=>h.d));
-  const newEntries=[];
+// Save a rolling backup of current cloud state to /users/{sk}_backup_<n>.
+// Keeps 2 rolling backups (b1 and b2). Always overwrites the older one.
+// Returns the backup slot used ("b1" or "b2") or null on failure.
+async function saveCloudBackup(){
   const sk=getSyncKey();
-  candidates.forEach(({date,data,localKey})=>{
-    if(!existingDates.has(date)){
-      const entry={d:date,...data};
-      newEntries.push(entry);
-      existingDates.add(date);
-    }
-    // Clean local
-    if(localKey){
-      try{localStorage.removeItem(localKey);localStorage.removeItem("ph_supps_"+date)}catch{}
-    }
-    // Clean remote (best-effort, async, don't block)
-    if(sk){
-      try{fetch(`${FB_URL}/users/${sk}/today_${date}.json`,{method:"DELETE"}).catch(()=>{})}catch{}
-      try{fetch(`${FB_URL}/users/${sk}/supps_${date}.json`,{method:"DELETE"}).catch(()=>{})}catch{}
-    }
-  });
-
-  if(newEntries.length===0)return currentHistory;
-  const updated=[...(currentHistory||[]),...newEntries].sort((a,b)=>a.d.localeCompare(b.d));
-  // Persist via DB (writes to both local + Firebase)
-  DB.set("history",updated);
-  return updated;
-}
-const predictG=(sl,st,as,al,ex)=>{let g=90;if(sl<6)g+=13;else if(sl<7)g+=8;else if(sl<7.5)g+=5;else if(sl<8)g+=2;g+=Math.min((st||4)-2,5);g+=Math.min(Math.max((as||0)-10,0)/4,5);g+=Math.min((al||0)*2.5,8);if(ex)g-=7;return Math.round(g)};
-
-// BP averaging: only readings explicitly marked with `avg:true` are included.
-// If nothing is marked, no average is computed (the banner shows "Nothing marked").
-// Readings can also carry a `rested:true` flag (informational — 5-min rest protocol).
-function bpAverage(readings){
-  if(!readings||readings.length===0)return null;
-  const marked=readings.filter(r=>r.avg);
-  if(marked.length===0)return {n:0,total:readings.length,s:null,d:null,p:null};
-  const avg=(field)=>{const vals=marked.map(r=>+r[field]).filter(v=>!isNaN(v));if(vals.length===0)return null;return Math.round(vals.reduce((a,b)=>a+b,0)/vals.length)};
-  return {s:avg("s"),d:avg("d"),p:avg("p"),n:marked.length,total:readings.length};
+  if(!sk)return null;
+  try{
+    // Fetch current cloud state
+    const resp=await fetch(`${FB_URL}/users/${sk}.json`);
+    const current=await resp.json();
+    if(!current||typeof current!=="object")return null;
+    // Determine which backup slot to overwrite (the older one)
+    // We track which slot was last written via a tiny marker in each slot
+    let useSlot="b1";
+    try{
+      const meta=await fetch(`${FB_URL}/users/${sk}_backup_meta.json`).then(r=>r.json());
+      if(meta&&meta.last==="b1")useSlot="b2";
+    }catch{}
+    // Write the backup with a timestamp wrapper
+    const wrapped={ts:new Date().toISOString(),data:current};
+    await fetch(`${FB_URL}/users/${sk}_backup_${useSlot}.json`,{method:"PUT",body:JSON.stringify(wrapped)});
+    await fetch(`${FB_URL}/users/${sk}_backup_meta.json`,{method:"PUT",body:JSON.stringify({last:useSlot,ts:new Date().toISOString()})});
+    return useSlot;
+  }catch(e){return null}
 }
 
-// ============================================================
-// AI MEAL ANALYSIS (Priority 1 — v2)
-// ============================================================
-// Sends text or photo to Claude Sonnet, returns array of nutrition items.
-// Uses Phil's stored foodref + profile so estimates match his actual products.
-const MEAL_SYSTEM=`You are a nutrition analyst for a health tracking app. The user will describe a meal (text) or send a photo (of food or a nutrition label). You must return ONLY a valid JSON object in this exact format, with no prose, no markdown fences, no explanation:
-
-{"items":[{"n":"item name","cal":0,"p":0,"ep":0,"ca":0,"fi":0,"as":0,"su":0,"fa":0,"sf":0,"na":0,"k":0,"note":"optional match note"}],"notes":"optional overall caveats"}
-
-Field definitions (all numeric, per the portion actually consumed):
-- n: short item name
-- cal: calories (kcal)
-- p: protein grams (raw)
-- ep: effective protein grams (collagen counts at 50%, everything else = p)
-- ca: carbohydrates grams (total)
-- fi: fiber grams
-- as: added sugar grams (NOT total sugar — only added)
-- su: total sugars grams
-- fa: fat grams (total)
-- sf: saturated fat grams
-- na: sodium mg
-- k: potassium mg
-- note: short string if you matched to a known product, made an assumption, or flagged a trap
-
-Rules:
-1. If the user's description matches a known product in the FOOD REFERENCE below, use those exact values and set "note":"matched: <product>".
-2. If unsure about portion, assume one standard serving and say so in note.
-3. Multiple items in one meal → multiple entries in the items array.
-4. If the input is a photo of a nutrition label, extract values from the label (respect serving size — ask yourself: did the user eat one serving or the whole container? If unclear, assume one serving and note it).
-5. If the input is a photo of food, estimate from visible portions.
-6. Added sugar: if a product has added sugar you know about (dressings, sauces, yogurt), include it. Default to 0 only if you're confident there's none.
-7. Effective protein (ep): collagen peptides = 50% of raw. Whey/meat/dairy/eggs/legumes = 100%. Mixed → weighted.
-8. Return ONLY the JSON object. No backticks. No prose.`;
-
-async function analyzeMeal({text,imageB64,imageMedia}){
-  const key=LS.get("api_key");
-  if(!key)throw new Error("No API key. Set one in Settings.");
-  const profile=DB.get("profile")||"";
-  const foodref=DB.get("foodref")||"";
-  const sys=MEAL_SYSTEM+"\n\n=== USER PROFILE ===\n"+profile+"\n\n=== FOOD REFERENCE (known products) ===\n"+(foodref||"(no food reference loaded — make best-effort estimates)");
-  const userContent=[];
-  if(imageB64){
-    userContent.push({type:"image",source:{type:"base64",media_type:imageMedia||"image/jpeg",data:imageB64}});
-  }
-  userContent.push({type:"text",text:text||"Analyze this meal and return the JSON."});
-  const body={model:"claude-sonnet-4-20250514",max_tokens:1500,system:sys,messages:[{role:"user",content:userContent}]};
-  const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify(body)});
-  const d=await r.json();
-  if(d.error)throw new Error(d.error.message||"API error");
-  let raw="";
-  if(d.content&&Array.isArray(d.content)){raw=d.content.filter(b=>b.type==="text").map(b=>b.text).join("\n")}
-  raw=raw.replace(/```json|```/g,"").trim();
-  // Extract the first JSON object if the model added any stray text
-  const m=raw.match(/\{[\s\S]*\}/);
-  if(!m)throw new Error("Could not parse AI response: "+raw.slice(0,200));
-  let parsed;
-  try{parsed=JSON.parse(m[0])}catch(e){throw new Error("Invalid JSON from AI: "+e.message)}
-  if(!parsed.items||!Array.isArray(parsed.items))throw new Error("AI response missing items array");
-  // Normalize: ensure all numeric fields present
-  const fields=["cal","p","ep","ca","fi","as","su","fa","sf","na","k"];
-  parsed.items=parsed.items.map(it=>{
-    const clean={n:it.n||"Item",note:it.note||""};
-    fields.forEach(f=>{clean[f]=typeof it[f]==="number"?it[f]:(parseFloat(it[f])||0)});
-    if(!it.ep&&it.p)clean.ep=clean.p;
-    return clean;
-  });
-  return parsed;
+// Merge local history with cloud history. Dedup by date `d`. For overlapping
+// dates, local wins (assumed to be more recent edits). Used by safe-push to
+// ensure pushing never deletes cloud days that don't exist locally.
+function mergeHistory(localHist,cloudHist){
+  const byDate={};
+  (cloudHist||[]).forEach(h=>{if(h&&h.d)byDate[h.d]=h});
+  (localHist||[]).forEach(h=>{if(h&&h.d)byDate[h.d]=h}); // local overrides
+  return Object.values(byDate).sort((a,b)=>a.d.localeCompare(b.d));
 }
-
-function fileToBase64(file){
-  return new Promise((res,rej)=>{
-    const r=new FileReader();
-    r.onload=()=>{const s=r.result;const i=s.indexOf(",");res({data:s.slice(i+1),media:file.type||"image/jpeg"})};
-    r.onerror=()=>rej(new Error("Could not read file"));
-    r.readAsDataURL(file);
-  });
-}
-
-// Voice-to-fields parser. Sends a free-form spoken transcript to Claude Sonnet
-// with a tight schema and returns a parsed JSON object. `kind` is "glucose" or "sleep".
-async function parseVoiceFields(kind,transcript){
-  const key=LS.get("api_key");
-  if(!key)throw new Error("No API key. Set one in Settings.");
-  let schema,instructions;
-  if(kind==="glucose"){
-    schema=`{"v":<number, glucose mg/dL>,"t":"<H:MM AM/PM or empty>"}`;
-    instructions=`Extract a glucose reading and time from the transcript. The number is the glucose value in mg/dL (typical range 70-200). The time should be formatted "H:MM AM" or "H:MM PM" (e.g. "9:05 AM"). If no time mentioned, leave t empty.`;
-  }else if(kind==="sleep"){
-    schema=`{"sl":<hours as decimal, e.g. 8.25>,"ss":<sleep score 0-100>,"deep":<deep sleep minutes>,"rem":<REM minutes>,"light":<light sleep minutes>,"shr":<sleeping heart rate bpm>,"bed":"<bed time H:MM AM/PM>","wake":"<wake time H:MM AM/PM>"}`;
-    instructions=`Extract Fitbit-style sleep data from the transcript. sl is total sleep duration in hours (decimal — "8 hours 15 minutes" → 8.25). ss is the sleep score (0-100). deep/rem/light are stage minutes. shr is sleeping heart rate. bed/wake are clock times like "10:45 PM" / "7:00 AM". Set any field to null if not mentioned.`;
-  }else if(kind==="bp"){
-    schema=`{"s":<systolic mmHg>,"d":<diastolic mmHg>,"p":<pulse bpm or null>,"t":"<H:MM AM/PM or empty>","rested":<true if user says rested/5min/seated, otherwise false>}`;
-    instructions=`Extract a blood pressure reading from the transcript. Common phrasings: "one fifteen over seventy-two pulse sixty-eight" → s:115, d:72, p:68. "Rested" or "after five minutes" or "seated rest" → rested:true. Time like "seven thirty AM" formats as "7:30 AM". Pulse is optional.`;
-  }else throw new Error("Unknown voice kind: "+kind);
-  const sys=`You are a parser for a health tracking app. ${instructions}\n\nReturn ONLY a single valid JSON object matching this schema:\n${schema}\n\nNo prose, no markdown fences, no explanation. If a field is not mentioned in the transcript, set it to null. Numbers must be numbers, not strings.`;
-  const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:300,system:sys,messages:[{role:"user",content:transcript}]})});
-  const d=await r.json();
-  if(d.error)throw new Error(d.error.message||"API error");
-  let raw="";
-  if(d.content&&Array.isArray(d.content)){raw=d.content.filter(b=>b.type==="text").map(b=>b.text).join("\n")}
-  raw=raw.replace(/```json|```/g,"").trim();
-  const m=raw.match(/\{[\s\S]*\}/);
-  if(!m)throw new Error("Could not parse: "+raw.slice(0,150));
-  try{return JSON.parse(m[0])}catch(e){throw new Error("Invalid JSON: "+e.message)}
-}
-
-// ============================================================
-// SMALL COMPONENTS
-// ============================================================
-function Metric({label,value,unit,target,isMax,color}){
-  const over=isMax&&value>target;const under=!isMax&&target&&value<target;
-  const c=over?C.rose:under?C.amber:color||C.teal;
-  const pct=target?Math.min((value/target)*100,110):null;
-  return React.createElement("div",{style:{background:C.card,borderRadius:14,padding:"16px 16px",borderLeft:`4px solid ${c}`}},
-    React.createElement("div",{style:{fontSize:15,color:C.dim,marginBottom:5}},label),
-    React.createElement("div",{style:{display:"flex",alignItems:"baseline",gap:6}},
-      React.createElement("span",{style:{fontSize:34,fontWeight:700,color:c,fontFamily:"monospace"}},value!=null?Math.round(value):"—"),
-      unit&&React.createElement("span",{style:{fontSize:14,color:C.dim}},unit),
-      target&&React.createElement("span",{style:{fontSize:13,color:C.dim,marginLeft:"auto"}},`/ ${target}${isMax?" max":""}`)
-    ),
-    pct!=null&&React.createElement("div",{style:{height:4,background:C.card2,borderRadius:2,marginTop:8}},
-      React.createElement("div",{style:{height:4,background:c,borderRadius:2,width:`${Math.min(pct,100)}%`,transition:"width 0.5s"}}))
-  );
-}
-
-function SuppCard({s,done,onTap,expanded}){
-  return React.createElement("div",{onClick:onTap,style:{background:done?C.card2:(expanded?C.amber+"15":C.card),borderRadius:12,padding:"14px 14px",border:`${expanded?2:1}px solid ${done?C.grn+"60":(expanded?C.amber:C.bdr)}`,cursor:"pointer",opacity:done?0.65:1,display:"flex",flexDirection:"column",gap:8}},
-    React.createElement("div",{style:{display:"flex",alignItems:"center",gap:12}},
-      React.createElement("div",{style:{width:36,h<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no,viewport-fit=cover">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="theme-color" content="#0f172a">
-<title>Health Dashboard</title>
-<script crossorigin="anonymous" src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
-<script crossorigin="anonymous" src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
-<script crossorigin="anonymous" src="https://cdnjs.cloudflare.com/ajax/libs/prop-types/15.8.1/prop-types.min.js"></script>
-<script crossorigin="anonymous" src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js" onerror="window._rechartsErr=true"></script>
-
-<style>
-*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-body{background:#0f172a;color:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;overflow-x:hidden;min-height:100vh;padding-bottom:env(safe-area-inset-bottom,0px)}
-#root{min-height:100vh}
-input,textarea,select{font-family:inherit}
-input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
-::-webkit-scrollbar{width:4px}
-::-webkit-scrollbar-track{background:#1e293b}
-::-webkit-scrollbar-thumb{background:#475569;border-radius:4px}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
-</style>
-</head>
-<body>
-<div id="root"><div style="display:flex;align-items:center;justify-content:center;height:100vh;color:#14b8a6;font-size:16px">Loading dashboard...</div></div>
-<script>window.onerror=function(m,u,l){if(m==="Script error."&&l===0)return;document.getElementById("root").innerHTML='<div style="padding:20px;color:#f43f5e;font-size:14px;line-height:1.6"><b>Error:</b><br>'+m+'<br><br>Line: '+l+'<br><br>Make sure you have internet for first load (CDN scripts).</div>';}</script>
-<script type="text/javascript">
-const {useState,useEffect,useRef,useCallback}=React;
-// Recharts loaded dynamically in TrendsTab - accessed via window.Recharts
-
-// ============================================================
-// CONSTANTS
-// ============================================================
-const C={bg:"#0f172a",card:"#1e293b",card2:"#334155",bdr:"#475569",txt:"#f1f5f9",dim:"#94a3b8",teal:"#14b8a6",amber:"#f59e0b",rose:"#f43f5e",grn:"#22c55e",blue:"#3b82f6",purp:"#a78bfa"};
-
-const TARGETS={cal:{rest:1800,ex:2000},prot:{min:110,max:140},carbs:{min:100},fib:{min:28},as:{max:20},na:{max:2300},k:{min:3000}};
-
-const SUPPS=[
-{id:"am_shake",name:"Morning Shake",time:"~9 AM",icon:"☕",items:"Whey+Collagen+Psyllium+Flax+Milk"},
-{id:"am_vit",name:"Morning Vitamins",time:"w/ breakfast",icon:"💊",items:"C 500mg, D3, B12, Ritual"},
-{id:"mid_fib",name:"Between Meals Fiber",time:"~10 AM",icon:"🥛",items:"Psyllium+Acacia water (or Kefir+Momentous)"},
-{id:"minox",name:"Minoxidil",time:"AM post-shower",icon:"💆",items:"Topical (skip 24hr post-stamp)"},
-{id:"din_vit",name:"Dinner Vitamins",time:"w/ dinner",icon:"🐟",items:"Ritual, Fish Oil, Finasteride ⚠️"},
-{id:"bed",name:"Bedtime Stack",time:"~10 PM",icon:"🌙",items:"Mg 240mg, L-Serine 2g, Ashwagandha 600mg"},
-{id:"allergy",name:"Allergy Sequence",time:"before bed stack",icon:"🤧",items:"Rinse→Nasacort→Allegra→wait 20-30min"},
-];
-
-const QMEALS=[
-{id:"shake",n:"Morning Shake (standard)",cal:448,p:53.6,ep:44.1,ca:23,fi:8.8,as:1,su:14.4,fa:12.6,sf:6.3,na:316,k:563},
-{id:"oikos",n:"Oikos Protein Shake",cal:180,p:30,ep:30,ca:9,fi:6,as:0,su:1,fa:4,sf:2.5,na:240,k:370},
-{id:"fairlife",n:"Fairlife Nutrition Plan",cal:150,p:30,ep:30,ca:4,fi:1,as:0,su:2,fa:2.5,sf:1.5,na:230,k:460},
-{id:"yogurt",n:"Greek Yogurt + Berries",cal:210,p:16,ep:16,ca:18,fi:2,as:0,su:12,fa:9,sf:5,na:75,k:280},
-{id:"ban_nut",n:"Banana + Mixed Nuts (1oz)",cal:275,p:6.3,ep:6.3,ca:33,fi:5,as:0,su:15,fa:16,sf:2,na:86,k:592},
-{id:"chicken",n:"Chicken Breast Bites",cal:140,p:24,ep:24,ca:3,fi:0,as:0,su:0,fa:3.5,sf:0.5,na:400,k:470},
-{id:"nuts",n:"Mixed Nuts (1 oz)",cal:170,p:5,ep:5,ca:6,fi:2,as:0,su:1,fa:16,sf:2,na:85,k:170},
-{id:"kefir",n:"Lifeway Plain Kefir (1 cup)",cal:110,p:10,ep:10,ca:9,fi:0,as:0,su:9,fa:2.5,sf:1.5,na:125,k:380},
-{id:"coco",n:"Coconut Water (half bottle)",cal:60,p:0,ep:0,ca:14,fi:0,as:0,su:13,fa:0.5,sf:0,na:27,k:429},
-{id:"fiber",n:"Acacia + Psyllium Water",cal:35,p:0,ep:0,ca:9,fi:8.5,as:0,su:0,fa:0,sf:0,na:0,k:0},
-{id:"waterfib",n:"Water + 1 tsp psyllium + 1 tbsp acacia",cal:35,p:0,ep:0,ca:9,fi:8.5,as:0,su:0,fa:0,sf:0,na:0,k:0},
-{id:"milk",n:"Whole Milk (8 oz)",cal:149,p:8,ep:8,ca:12,fi:0,as:0,su:12,fa:8,sf:4.9,na:105,k:300},
-];
-
-// Master exercise list — everything Phil might do in a day. Flat list, no presets.
-// Fill in sets/reps/weight on whatever rows were done today, tap Log, repeat later as needed.
-const ALL_EXERCISES=[
-  "Bench Press",
-  "Incline Press",
-  "Chest Fly",
-  "Shoulder Press",
-  "Triceps Extension",
-  "Chin-ups (assist)",
-  "Lat Pulldown",
-  "Rows",
-  "Bicep Curls",
-  "Squats",
-  "Calf Raises",
-  "1-mile Run",
-  "Zone 2 Walk",
-];
-
-// Exercise routines — defaults reflect current milestones (Apr 2026)
-const HIST=[];
-
-const DEFAULT_PROFILE="Health tracking dashboard. Import your health profile via Settings > Import Data to enable personalized AI chat.";
-// Profile loaded from localStorage after import
-
-// ============================================================
-// STORAGE (localStorage)
-// ============================================================
-// ============================================================
-// STORAGE: localStorage (fast) + Firebase (sync)
-// ============================================================
-const FB_URL="https://health-dashboard-fb552-default-rtdb.firebaseio.com";
-const LS={
-  get(k){try{const v=localStorage.getItem("ph_"+k);return v?JSON.parse(v):null}catch{return null}},
-  set(k,v){try{localStorage.setItem("ph_"+k,JSON.stringify(v));return true}catch{return false}},
-};
-const getSyncKey=()=>LS.get("sync_key");
-const FB={
-  async get(k){
-    const sk=getSyncKey();if(!sk)return null;
-    try{const r=await fetch(`${FB_URL}/users/${sk}/${k}.json`);const d=await r.json();return d}catch{return null}
-  },
-  async set(k,v){
-    const sk=getSyncKey();if(!sk)return;
-    try{await fetch(`${FB_URL}/users/${sk}/${k}.json`,{method:"PUT",body:JSON.stringify(v)})}catch{}
-  },
-};
-// Dual write: localStorage (instant) + Firebase (async background)
-const DB={
-  get(k){return LS.get(k)},
-  set(k,v){LS.set(k,v);FB.set(k,v)},
-  async pull(k){
-    const remote=await FB.get(k);
-    if(remote!=null){LS.set(k,remote);return remote}
-    return LS.get(k);
-  },
-  async pullAll(){
-    const sk=getSyncKey();if(!sk)return null;
-    try{const r=await fetch(`${FB_URL}/users/${sk}.json`);const d=await r.json();return d}catch{return null}
-  },
-  async pushAll(data){
-    const sk=getSyncKey();if(!sk)return;
-    try{await fetch(`${FB_URL}/users/${sk}.json`,{method:"PUT",body:JSON.stringify(data)})}catch{}
-  }
-};
-
-const todayStr=()=>new Date().toISOString().split("T")[0];
-const fmtD=d=>{const dt=new Date(d+"T12:00:00");return dt.toLocaleDateString("en-US",{month:"short",day:"numeric"})};
-// Format a JS timestamp (ISO string) to "9:10 AM"
-const fmtTime=ts=>{if(!ts)return"";try{const d=new Date(ts);return d.toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"})}catch{return""}};
-
-// P5 — Daily rollover. Scans localStorage for any ph_today_YYYY-MM-DD keys from
-// past dates, converts them to history entries, merges into history (dedup by date),
-// deletes the stale keys locally AND remotely. Returns updated history array.
 // Also accepts a `remote` object (from DB.pullAll) to catch any remote-only past-day data.
 function rolloverPastDays(currentHistory,remote){
   const today=todayStr();
@@ -1747,6 +1442,8 @@ function SettingsTab({history,setHistory}){
   const [status,setStatus]=useState("");
   const [importText,setImportText]=useState("");
   const [showImport,setShowImport]=useState(false);
+  const [delDate,setDelDate]=useState("");
+  const [showRestoreBackup,setShowRestoreBackup]=useState(false);
 
   const doImport=async()=>{
     try{
@@ -1789,10 +1486,40 @@ function SettingsTab({history,setHistory}){
       React.createElement("div",{style:{fontSize:16,fontWeight:600,marginBottom:8}},"☁️ Cloud Sync"),
       hasSyncKey?React.createElement("div",null,
         React.createElement("div",{style:{fontSize:14,color:C.grn,marginBottom:8}},"✓ Syncing with key: "+getSyncKey()),
-        React.createElement("div",{style:{fontSize:13,color:C.dim,marginBottom:8}},"Use the same sync key on your other devices to keep data in sync."),
+        React.createElement("div",{style:{fontSize:13,color:C.dim,marginBottom:8}},"Push is additive — it merges local data into cloud and never deletes cloud-only days. A rolling backup is saved before each push (2 slots)."),
         React.createElement("div",{style:{display:"flex",gap:8,flexWrap:"wrap"}},
-          React.createElement(Btn,{onClick:async()=>{var sk=getSyncKey();setStatus("Pushing to cloud... (key: "+sk+")");try{var data={};var h=LS.get("history");if(h)data.history=h;var p=LS.get("profile");if(p)data.profile=p;var fr=LS.get("foodref");if(fr)data.foodref=fr;var t=LS.get("today_"+todayStr());if(t)data["today_"+todayStr()]=t;var s=LS.get("supps_"+todayStr());if(s)data["supps_"+todayStr()]=s;await fetch(FB_URL+"/users/"+sk+".json",{method:"PUT",body:JSON.stringify(data)});setStatus("✓ Pushed to cloud! "+(data.history?data.history.length:0)+" days of history uploaded.")}catch(err){setStatus("❌ Error: "+err.message)}},color:C.grn,style:{fontSize:14}},["⬆ Push to Cloud"]),
-          React.createElement(Btn,{onClick:async()=>{var sk=getSyncKey();setStatus("Pulling from cloud... (key: "+sk+")");try{var url=FB_URL+"/users/"+sk+".json";var resp=await fetch(url);var r=await resp.json();if(r&&typeof r==="object"&&Object.keys(r).length>0){var count=0;if(r.history){setHistory(r.history);LS.set("history",r.history);setHasHist(true);count=r.history.length}if(r.profile){LS.set("profile",r.profile);setHasProfile(true)}if(r.foodref){LS.set("foodref",r.foodref);setHasFoodref(true)}setStatus("✓ Synced! "+count+" days of history loaded.")}else{setStatus("⚠ No data found at key: "+sk+". Make sure you used the same passphrase on both devices.")}}catch(err){setStatus("❌ Error: "+err.message)}},color:C.blue,style:{fontSize:14}},["⬇ Pull from Cloud"]),
+          React.createElement(Btn,{onClick:async()=>{
+            var sk=getSyncKey();
+            setStatus("⏳ Saving backup before push...");
+            try{
+              const backupSlot=await saveCloudBackup();
+              setStatus("⏳ Merging local with cloud...");
+              // Fetch current cloud history to merge against local
+              const cloudResp=await fetch(`${FB_URL}/users/${sk}.json`);
+              const cloud=await cloudResp.json()||{};
+              const localHist=LS.get("history")||[];
+              const mergedHist=mergeHistory(localHist,cloud.history||[]);
+              // Build patch payload — include only what's locally present
+              const patch={};
+              patch.history=mergedHist;
+              const p=LS.get("profile");if(p)patch.profile=p;
+              const fr=LS.get("foodref");if(fr)patch.foodref=fr;
+              const t=LS.get("today_"+todayStr());if(t)patch["today_"+todayStr()]=t;
+              const s=LS.get("supps_"+todayStr());if(s)patch["supps_"+todayStr()]=s;
+              const ed=LS.get("ex_defaults");if(ed)patch.ex_defaults=ed;
+              // PATCH (merge) into cloud
+              await fetch(`${FB_URL}/users/${sk}.json`,{method:"PATCH",body:JSON.stringify(patch)});
+              const localCount=localHist.length;
+              const cloudCount=(cloud.history||[]).length;
+              const mergedCount=mergedHist.length;
+              setStatus(`✓ Synced! Local: ${localCount} • Cloud was: ${cloudCount} • Merged: ${mergedCount}${backupSlot?" • Backup saved to "+backupSlot:""}`);
+              // Update local history with merged result
+              LS.set("history",mergedHist);
+              setHistory(mergedHist);
+              setHasHist(mergedHist.length>0);
+            }catch(err){setStatus("❌ Error: "+err.message)}
+          },color:C.grn,style:{fontSize:14}},["⬆ Sync Local → Cloud"]),
+          React.createElement(Btn,{onClick:async()=>{var sk=getSyncKey();setStatus("Pulling from cloud... (key: "+sk+")");try{var url=FB_URL+"/users/"+sk+".json";var resp=await fetch(url);var r=await resp.json();if(r&&typeof r==="object"&&Object.keys(r).length>0){var count=0;if(r.history){setHistory(r.history);LS.set("history",r.history);setHasHist(true);count=r.history.length}if(r.profile){LS.set("profile",r.profile);setHasProfile(true)}if(r.foodref){LS.set("foodref",r.foodref);setHasFoodref(true)}if(r.ex_defaults){LS.set("ex_defaults",r.ex_defaults)}setStatus("✓ Synced! "+count+" days of history loaded.")}else{setStatus("⚠ No data found at key: "+sk+". Make sure you used the same passphrase on both devices.")}}catch(err){setStatus("❌ Error: "+err.message)}},color:C.blue,style:{fontSize:14}},["⬇ Pull from Cloud"]),
           React.createElement(Btn,{onClick:()=>{if(confirm("Remove sync key? Data stays on this device but stops syncing.")){localStorage.removeItem("ph_sync_key");setHasSyncKey(false)}},color:C.rose,outline:true,style:{fontSize:14}},["Disconnect"])
         )
       ):React.createElement("div",null,
@@ -1811,6 +1538,65 @@ function SettingsTab({history,setHistory}){
         React.createElement("div",{style:{fontSize:14,color:hasProfile?C.grn:C.amber}},hasProfile?"✓ Health profile loaded":"⚠ No health profile — import below"),
         React.createElement("div",{style:{fontSize:14,color:hasFoodref?C.grn:C.amber}},hasFoodref?"✓ Food reference loaded (AI meal analysis enabled)":"⚠ No food reference — AI meal estimates will be less accurate"),
         React.createElement("div",{style:{fontSize:14,color:hasKey?C.grn:C.dim}},hasKey?"✓ API key saved":"○ No API key (AI chat + meal analysis disabled)")
+      )
+    ),
+
+    // Manage History (delete day, restore backup)
+    React.createElement("div",{style:{background:C.card,borderRadius:10,padding:14,border:`1px solid ${C.bdr}`}},
+      React.createElement("div",{style:{fontSize:16,fontWeight:600,marginBottom:8}},"Manage History"),
+      React.createElement("div",{style:{fontSize:13,color:C.dim,marginBottom:10,lineHeight:1.5}},"Delete a single day from history if you need to fix bad data. A cloud backup is saved automatically before any deletion (2 rolling slots: b1, b2)."),
+      React.createElement("div",{style:{display:"flex",gap:8,marginBottom:10,alignItems:"center"}},
+        React.createElement("input",{type:"date",value:delDate,onChange:e=>setDelDate(e.target.value),
+          style:{flex:1,background:C.card2,border:`1px solid ${C.bdr}`,borderRadius:8,padding:"10px 12px",color:C.txt,fontSize:14,outline:"none",fontFamily:"inherit"}}),
+        React.createElement(Btn,{onClick:async()=>{
+          if(!delDate){setStatus("Pick a date first.");return}
+          const dayInHistory=history.find(h=>h.d===delDate);
+          if(!dayInHistory){setStatus(`No history entry for ${delDate}.`);return}
+          if(!confirm(`Delete history entry for ${delDate}?\n\nThis will:\n• Remove the day from local history\n• Save a backup snapshot of cloud data first\n• Sync the deletion to cloud\n\nThis CANNOT be undone except by restoring from backup.`))return;
+          setStatus("⏳ Saving cloud backup before deletion...");
+          try{
+            const slot=await saveCloudBackup();
+            // Remove the day locally
+            const next=history.filter(h=>h.d!==delDate);
+            DB.set("history",next);
+            setHistory(next);
+            setHasHist(next.length>0);
+            // Push the new history to cloud (PATCH overwrites the history field with the trimmed array)
+            const sk=getSyncKey();
+            if(sk){
+              await fetch(`${FB_URL}/users/${sk}.json`,{method:"PATCH",body:JSON.stringify({history:next})});
+              setStatus(`✓ Deleted ${delDate}. Backup saved to ${slot||"local only"}. ${next.length} days remaining.`);
+            }else{
+              setStatus(`✓ Deleted ${delDate} locally. (No cloud sync key — backup not saved.)`);
+            }
+            setDelDate("");
+          }catch(err){setStatus("❌ Error: "+err.message)}
+        },color:C.rose,style:{fontSize:13}},["🗑 Delete Day"])
+      ),
+      React.createElement("div",{style:{borderTop:`1px solid ${C.bdr}33`,paddingTop:10,marginTop:10}},
+        React.createElement("div",{style:{fontSize:13,color:C.dim,marginBottom:8,lineHeight:1.4}},"If something went wrong, you can restore the most recent cloud backup. Backups are written to slots b1 and b2 (rolling)."),
+        React.createElement(Btn,{onClick:async()=>{
+          const sk=getSyncKey();
+          if(!sk){setStatus("No sync key — no backups available.");return}
+          setStatus("⏳ Looking up backups...");
+          try{
+            const meta=await fetch(`${FB_URL}/users/${sk}_backup_meta.json`).then(r=>r.json());
+            if(!meta||!meta.last){setStatus("No backups found.");return}
+            const slot=meta.last;
+            const wrap=await fetch(`${FB_URL}/users/${sk}_backup_${slot}.json`).then(r=>r.json());
+            if(!wrap||!wrap.data){setStatus(`Backup ${slot} is empty.`);return}
+            const ts=wrap.ts||"unknown time";
+            if(!confirm(`Restore from backup slot ${slot}?\n\nBackup taken: ${ts}\nContains: ${(wrap.data.history||[]).length} days of history\n\nThis will OVERWRITE current local + cloud state with this backup.`))return;
+            // Restore: overwrite local + cloud with backup data
+            const data=wrap.data;
+            if(data.history){LS.set("history",data.history);setHistory(data.history);setHasHist(data.history.length>0)}
+            if(data.profile){LS.set("profile",data.profile);setHasProfile(true)}
+            if(data.foodref){LS.set("foodref",data.foodref);setHasFoodref(true)}
+            if(data.ex_defaults){LS.set("ex_defaults",data.ex_defaults)}
+            await fetch(`${FB_URL}/users/${sk}.json`,{method:"PUT",body:JSON.stringify(data)});
+            setStatus(`✓ Restored from ${slot} (${ts}). ${(data.history||[]).length} days of history.`);
+          }catch(err){setStatus("❌ Restore error: "+err.message)}
+        },color:C.amber,outline:true,style:{fontSize:13}},["↶ Restore Most Recent Backup"])
       )
     ),
 
