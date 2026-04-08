@@ -51,18 +51,20 @@ const SUPPS=[
 ];
 
 const QMEALS=[
-{id:"shake",n:"Morning Shake (standard)",cal:448,p:53.6,ep:44.1,ca:23,fi:8.8,as:1,su:14.4,fa:12.6,sf:6.3,na:316,k:563},
-{id:"oikos",n:"Oikos Protein Shake",cal:180,p:30,ep:30,ca:9,fi:6,as:0,su:1,fa:4,sf:2.5,na:240,k:370},
-{id:"fairlife",n:"Fairlife Nutrition Plan",cal:150,p:30,ep:30,ca:4,fi:1,as:0,su:2,fa:2.5,sf:1.5,na:230,k:460},
-{id:"yogurt",n:"Greek Yogurt + Berries",cal:210,p:16,ep:16,ca:18,fi:2,as:0,su:12,fa:9,sf:5,na:75,k:280},
-{id:"ban_nut",n:"Banana + Mixed Nuts (1oz)",cal:275,p:6.3,ep:6.3,ca:33,fi:5,as:0,su:15,fa:16,sf:2,na:86,k:592},
-{id:"chicken",n:"Chicken Breast Bites",cal:140,p:24,ep:24,ca:3,fi:0,as:0,su:0,fa:3.5,sf:0.5,na:400,k:470},
-{id:"nuts",n:"Mixed Nuts (1 oz)",cal:170,p:5,ep:5,ca:6,fi:2,as:0,su:1,fa:16,sf:2,na:85,k:170},
-{id:"kefir",n:"Lifeway Plain Kefir (1 cup)",cal:110,p:10,ep:10,ca:9,fi:0,as:0,su:9,fa:2.5,sf:1.5,na:125,k:380},
-{id:"coco",n:"Coconut Water (half bottle)",cal:60,p:0,ep:0,ca:14,fi:0,as:0,su:13,fa:0.5,sf:0,na:27,k:429},
-{id:"fiber",n:"Acacia + Psyllium Water",cal:35,p:0,ep:0,ca:9,fi:8.5,as:0,su:0,fa:0,sf:0,na:0,k:0},
-{id:"waterfib",n:"Water + 1 tsp psyllium + 1 tbsp acacia",cal:35,p:0,ep:0,ca:9,fi:8.5,as:0,su:0,fa:0,sf:0,na:0,k:0},
-{id:"milk",n:"Whole Milk (8 oz)",cal:149,p:8,ep:8,ca:12,fi:0,as:0,su:12,fa:8,sf:4.9,na:105,k:300},
+{id:"shake",n:"Morning Shake (standard)",cal:448,p:53.6,ep:44.1,ca:23,fi:8.8,as:1,su:14.4,fa:12.6,sf:6.3,na:316,k:563,cm:450,fl:14},
+{id:"oikos",n:"Oikos Protein Shake",cal:180,p:30,ep:30,ca:9,fi:6,as:0,su:1,fa:4,sf:2.5,na:240,k:370,cm:350,fl:14},
+{id:"fairlife",n:"Fairlife Nutrition Plan",cal:150,p:30,ep:30,ca:4,fi:1,as:0,su:2,fa:2.5,sf:1.5,na:230,k:460,cm:730,fl:12},
+{id:"yogurt",n:"Greek Yogurt + Berries",cal:210,p:16,ep:16,ca:18,fi:2,as:0,su:12,fa:9,sf:5,na:75,k:280,cm:200,fl:0},
+{id:"ban_nut",n:"Banana + Mixed Nuts (1oz)",cal:275,p:6.3,ep:6.3,ca:33,fi:5,as:0,su:15,fa:16,sf:2,na:86,k:592,cm:30,fl:0},
+{id:"chicken",n:"Chicken Breast Bites",cal:140,p:24,ep:24,ca:3,fi:0,as:0,su:0,fa:3.5,sf:0.5,na:400,k:470,cm:15,fl:0},
+{id:"nuts",n:"Mixed Nuts (1 oz)",cal:170,p:5,ep:5,ca:6,fi:2,as:0,su:1,fa:16,sf:2,na:85,k:170,cm:35,fl:0},
+{id:"kefir",n:"Lifeway Plain Kefir (1 cup)",cal:110,p:10,ep:10,ca:9,fi:0,as:0,su:9,fa:2.5,sf:1.5,na:125,k:380,cm:300,fl:8},
+{id:"coco",n:"Coconut Water (half bottle)",cal:60,p:0,ep:0,ca:14,fi:0,as:0,su:13,fa:0.5,sf:0,na:27,k:429,cm:40,fl:8},
+{id:"fiber",n:"Acacia + Psyllium Water",cal:35,p:0,ep:0,ca:9,fi:8.5,as:0,su:0,fa:0,sf:0,na:0,k:0,cm:0,fl:22},
+{id:"waterfib",n:"Water + 1 tsp psyllium + 1 tbsp acacia",cal:35,p:0,ep:0,ca:9,fi:8.5,as:0,su:0,fa:0,sf:0,na:0,k:0,cm:0,fl:22},
+{id:"milk",n:"Whole Milk (8 oz)",cal:149,p:8,ep:8,ca:12,fi:0,as:0,su:12,fa:8,sf:4.9,na:105,k:300,cm:300,fl:8},
+{id:"water",n:"Water (8 oz)",cal:0,p:0,ep:0,ca:0,fi:0,as:0,su:0,fa:0,sf:0,na:0,k:0,cm:0,fl:8},
+{id:"coffee",n:"Black Coffee (8 oz)",cal:2,p:0,ep:0,ca:0,fi:0,as:0,su:0,fa:0,sf:0,na:5,k:116,cm:5,fl:8},
 ];
 
 // Master exercise list — everything Phil might do in a day. Flat list, no presets.
@@ -246,7 +248,7 @@ function bpAverage(readings){
 // Uses Phil's stored foodref + profile so estimates match his actual products.
 const MEAL_SYSTEM=`You are a nutrition analyst for a health tracking app. The user will describe a meal (text) or send a photo (of food or a nutrition label). You must return ONLY a valid JSON object in this exact format, with no prose, no markdown fences, no explanation:
 
-{"items":[{"n":"item name","cal":0,"p":0,"ep":0,"ca":0,"fi":0,"as":0,"su":0,"fa":0,"sf":0,"na":0,"k":0,"note":"optional match note"}],"notes":"optional overall caveats"}
+{"items":[{"n":"item name","cal":0,"p":0,"ep":0,"ca":0,"fi":0,"as":0,"su":0,"fa":0,"sf":0,"na":0,"k":0,"cm":0,"fl":0,"note":"optional match note"}],"notes":"optional overall caveats"}
 
 Field definitions (all numeric, per the portion actually consumed):
 - n: short item name
@@ -261,6 +263,8 @@ Field definitions (all numeric, per the portion actually consumed):
 - sf: saturated fat grams
 - na: sodium mg
 - k: potassium mg
+- cm: calcium mg (estimate from the food — dairy is high, nuts/leafy greens moderate, meat low)
+- fl: fluid ounces of liquid contributed by this item. Water=8oz/cup, milk=8oz/cup, coffee=8oz/cup, tea=8oz/cup, kefir=8oz/cup, coconut water=per serving, broth/soup=estimate liquid portion. Solid foods (salad, bread, meat) = 0. DO NOT count alcohol as fluid — set fl:0 for alcoholic drinks since alcohol is net-dehydrating.
 - note: short string if you matched to a known product, made an assumption, or flagged a trap
 
 Rules:
@@ -298,7 +302,7 @@ async function analyzeMeal({text,imageB64,imageMedia}){
   try{parsed=JSON.parse(m[0])}catch(e){throw new Error("Invalid JSON from AI: "+e.message)}
   if(!parsed.items||!Array.isArray(parsed.items))throw new Error("AI response missing items array");
   // Normalize: ensure all numeric fields present
-  const fields=["cal","p","ep","ca","fi","as","su","fa","sf","na","k"];
+  const fields=["cal","p","ep","ca","fi","as","su","fa","sf","na","k","cm","fl"];
   parsed.items=parsed.items.map(it=>{
     const clean={n:it.n||"Item",note:it.note||""};
     fields.forEach(f=>{clean[f]=typeof it[f]==="number"?it[f]:(parseFloat(it[f])||0)});
@@ -564,7 +568,7 @@ function TimePicker({value,onChange}){
 // ============================================================
 function AIMealPreview({items,notes,onConfirm,onCancel}){
   const [rows,setRows]=useState(items);
-  const fields=[["cal","cal"],["p","prot"],["ep","eff p"],["ca","carb"],["fi","fib"],["as","add sg"],["su","tot sg"],["fa","fat"],["sf","sat"],["na","Na"],["k","K"]];
+  const fields=[["cal","cal"],["p","prot"],["ep","eff p"],["ca","carb"],["fi","fib"],["as","add sg"],["su","tot sg"],["fa","fat"],["sf","sat"],["na","Na"],["k","K"],["cm","Ca"],["fl","fl oz"]];
   const update=(i,f,v)=>{const n=[...rows];n[i]={...n[i],[f]:parseFloat(v)||0};setRows(n)};
   const updateName=(i,v)=>{const n=[...rows];n[i]={...n[i],n:v};setRows(n)};
   const remove=i=>setRows(rows.filter((_,j)=>j!==i));
@@ -878,27 +882,43 @@ function TodayTab({data,setData,supps,setSupps,takeSupplement,untakeSupplement,a
       )
     ),
 
-    // Daily totals
+    // Daily totals — 12 tiles in a 2-column grid. Pairings: Cal/Protein,
+    // EffProt/Carbs, Fiber/AddSugar, TotSugar/SatFat, Sodium/Potassium,
+    // Calcium/Fluids.
     React.createElement("div",{key:"totals"},
       React.createElement("div",{style:{fontSize:15,fontWeight:600,color:C.dim,marginBottom:6}},"TODAY'S TOTALS"),
       React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}},
         React.createElement(Metric,{label:"Calories",value:data.cal,target:calT}),
         React.createElement(Metric,{label:"Protein (raw)",value:data.p,target:110,unit:"g"}),
+        React.createElement(Metric,{label:"Protein (eff)",value:data.ep,target:100,unit:"g"}),
         React.createElement(Metric,{label:"Carbs",value:data.ca,target:100,unit:"g"}),
         React.createElement(Metric,{label:"Fiber",value:data.fi,target:28,unit:"g"}),
         React.createElement(Metric,{label:"Added Sugar",value:data.as,target:20,isMax:true,unit:"g"}),
+        React.createElement(Metric,{label:"Total Sugar",value:data.su,target:60,isMax:true,unit:"g"}),
+        React.createElement(Metric,{label:"Sat Fat",value:data.sf,target:20,isMax:true,unit:"g",sub:`total fat ${Math.round(data.fa||0)}g`}),
         React.createElement(Metric,{label:"Sodium",value:data.na,target:2300,isMax:true,unit:"mg"}),
         React.createElement(Metric,{label:"Potassium",value:data.k,target:3000,unit:"mg"}),
-        React.createElement(Metric,{label:"Sat Fat",value:data.sf,target:20,isMax:true,unit:"g",sub:`total fat ${Math.round(data.fa||0)}g`})
+        React.createElement(Metric,{label:"Calcium",value:data.cm,target:1000,unit:"mg"}),
+        React.createElement(Metric,{label:"Fluids",value:data.fl,target:85,unit:"oz"})
       )
     ),
 
-    // Glucose prediction
-    data.sl!=null&&React.createElement("div",{key:"pred",style:{background:C.purp+"15",border:`1px solid ${C.purp}40`,borderRadius:10,padding:"10px 12px"}},
-      React.createElement("div",{style:{fontSize:16,color:C.purp,fontWeight:600}},"🔮 TOMORROW'S GLUCOSE PREDICTION"),
-      React.createElement("div",{style:{fontSize:36,fontWeight:700,color:C.purp,fontFamily:"monospace"}},"~"+predictG(data.sl,data.st,data.as,data.al,data.ex)),
-      React.createElement("div",{style:{fontSize:13,color:C.dim}},`Sleep ${data.sl}hr, ${data.al||0} drinks${data.al>0?" ⚠️":""}, ${data.as||0}g sugar, ${data.ex?"exercised ✓":"rest day"}`)
-    ),
+    // Glucose prediction — range from best case (8hr sleep, score 90, stress 3.5)
+    // to worst case (6hr sleep, score 79, stress 4.5). Sugar/alcohol/exercise
+    // are taken from today's logged data since those are known.
+    (()=>{
+      const best=predictG(8,3.5,data.as,data.al,data.ex);
+      const worst=predictG(6,4.5,data.as,data.al,data.ex);
+      const lo=Math.min(best,worst),hi=Math.max(best,worst);
+      return React.createElement("div",{key:"pred",style:{background:C.purp+"15",border:`1px solid ${C.purp}40`,borderRadius:10,padding:"10px 12px"}},
+        React.createElement("div",{style:{fontSize:16,color:C.purp,fontWeight:600}},"🔮 TOMORROW'S GLUCOSE PREDICTION"),
+        React.createElement("div",{style:{fontSize:36,fontWeight:700,color:C.purp,fontFamily:"monospace"}},`~${lo}–${hi}`),
+        React.createElement("div",{style:{fontSize:12,color:C.dim,lineHeight:1.5,marginTop:4}},
+          `Low (${lo}): 8 hr sleep, score 90, stress 3.5. High (${hi}): 6 hr sleep, score 79, stress 4.5.`),
+        React.createElement("div",{style:{fontSize:12,color:C.dim,marginTop:4}},
+          `Today's inputs: ${data.al||0} drinks${data.al>0?" ⚠️":""}, ${data.as||0}g added sugar, ${data.ex?"exercised ✓":"rest day"}`)
+      );
+    })(),
 
     // Glucose form — Speak + Add Reading buttons at the top, manual entry below
     et==="glucose"&&(()=>{
@@ -1334,7 +1354,7 @@ function TodayTab({data,setData,supps,setSupps,takeSupplement,untakeSupplement,a
               e("div",{style:{flex:1,fontSize:14,color:C.txt,fontWeight:600}},m.n||"Item"),
               e("div",{style:{fontSize:12,color:C.dim,fontFamily:"monospace"}},fmtTime(m.t))
             ),
-            m.cal!=null&&e("div",{style:{fontSize:11,color:C.dim,fontFamily:"monospace",marginTop:4}},`${Math.round(m.cal||0)}cal • ${Math.round(m.p||0)}p • ${Math.round(m.ca||0)}c • ${Math.round(m.fi||0)}fi • ${Math.round(m.as||0)}as • ${Math.round(m.na||0)}Na`)
+            m.cal!=null&&e("div",{style:{fontSize:11,color:C.dim,fontFamily:"monospace",marginTop:4}},`${Math.round(m.cal||0)}cal • ${Math.round(m.p||0)}p • ${Math.round(m.ca||0)}c • ${Math.round(m.fi||0)}fi • ${Math.round(m.as||0)}as • ${Math.round(m.na||0)}Na${m.fl?" • "+Math.round(m.fl)+"oz":""}`)
           ))
         )
       );
@@ -1439,7 +1459,19 @@ function TrendsTab({history}){
   var chart;
   if(ch==="glucose")chart=e(R.ResponsiveContainer,{width:"100%",height:"100%"},e(R.LineChart,{data:gd},grid,e(R.XAxis,Object.assign({dataKey:"date"},xa)),e(R.YAxis,{domain:[80,120],tick:ya10.tick}),e(R.Tooltip,tt),e(R.ReferenceLine,{y:100,stroke:C.amber,strokeDasharray:"5 5"}),e(R.Line,{type:"monotone",dataKey:"glucose",stroke:C.teal,strokeWidth:2,dot:{fill:C.teal,r:3}})));
   else if(ch==="sleepG")chart=e(R.ResponsiveContainer,{width:"100%",height:"100%"},e(R.ScatterChart,null,grid,e(R.XAxis,{dataKey:"sleep",name:"Sleep",unit:"hr",domain:[2,10],tick:ya10.tick}),e(R.YAxis,{dataKey:"glucose",domain:[80,120],tick:ya10.tick}),e(R.Tooltip,tt),e(R.Scatter,{data:sgd,fill:C.purp})));
-  else if(ch==="bp")chart=e(R.ResponsiveContainer,{width:"100%",height:"100%"},e(R.LineChart,{data:bpd},grid,e(R.XAxis,Object.assign({dataKey:"date"},xa)),e(R.YAxis,{domain:[60,130],tick:ya10.tick}),e(R.Tooltip,tt),e(R.Line,{type:"monotone",dataKey:"sys",stroke:C.rose,strokeWidth:2,dot:{r:2},name:"Systolic"}),e(R.Line,{type:"monotone",dataKey:"dia",stroke:C.blue,strokeWidth:2,dot:{r:2},name:"Diastolic"})));
+  else if(ch==="bp")chart=e(R.ResponsiveContainer,{width:"100%",height:"100%"},e(R.LineChart,{data:bpd},grid,e(R.XAxis,Object.assign({dataKey:"date"},xa)),e(R.YAxis,{domain:[60,140],ticks:[60,70,80,90,100,110,120,130,140],tick:ya10.tick}),e(R.Tooltip,tt),
+    e(R.ReferenceLine,{y:60,stroke:C.bdr,strokeDasharray:"2 4"}),
+    e(R.ReferenceLine,{y:70,stroke:C.bdr,strokeDasharray:"2 4"}),
+    e(R.ReferenceLine,{y:80,stroke:C.bdr,strokeDasharray:"2 4"}),
+    e(R.ReferenceLine,{y:90,stroke:C.bdr,strokeDasharray:"2 4"}),
+    e(R.ReferenceLine,{y:100,stroke:C.bdr,strokeDasharray:"2 4"}),
+    e(R.ReferenceLine,{y:110,stroke:C.bdr,strokeDasharray:"2 4"}),
+    e(R.ReferenceLine,{y:120,stroke:C.bdr,strokeDasharray:"2 4"}),
+    e(R.ReferenceLine,{y:130,stroke:C.bdr,strokeDasharray:"2 4"}),
+    e(R.ReferenceLine,{y:140,stroke:C.bdr,strokeDasharray:"2 4"}),
+    e(R.Line,{type:"monotone",dataKey:"sys",stroke:C.rose,strokeWidth:2,dot:{r:2},name:"Systolic"}),
+    e(R.Line,{type:"monotone",dataKey:"dia",stroke:C.blue,strokeWidth:2,dot:{r:2},name:"Diastolic"})
+  ));
   else if(ch==="pulse")chart=e(R.ResponsiveContainer,{width:"100%",height:"100%"},e(R.BarChart,{data:pud},grid,e(R.XAxis,Object.assign({dataKey:"date"},xa)),e(R.YAxis,{tick:ya10.tick}),e(R.Tooltip,tt),e(R.Bar,{dataKey:"pulse",fill:C.purp,radius:[3,3,0,0],name:"Pulse"}),e(R.Bar,{dataKey:"alcohol",fill:C.amber,radius:[3,3,0,0],name:"Alcohol×10"})));
   else if(ch==="macros")chart=e(R.ResponsiveContainer,{width:"100%",height:"100%"},e(R.BarChart,{data:mad},grid,e(R.XAxis,Object.assign({dataKey:"date"},xa)),e(R.YAxis,{tick:ya10.tick}),e(R.Tooltip,tt),e(R.Bar,{dataKey:"protein",fill:C.teal,radius:[2,2,0,0],name:"Protein"}),e(R.Bar,{dataKey:"fiber",fill:C.grn,radius:[2,2,0,0],name:"Fiber"})));
   else if(ch==="weight"&&wtd.length>0)chart=e(R.ResponsiveContainer,{width:"100%",height:"100%"},e(R.LineChart,{data:wtd},grid,e(R.XAxis,Object.assign({dataKey:"date"},xa)),e(R.YAxis,{domain:[175,195],tick:ya10.tick}),e(R.Tooltip,tt),e(R.ReferenceLine,{y:180,stroke:C.grn,strokeDasharray:"5 5"}),e(R.Line,{type:"monotone",dataKey:"weight",stroke:C.amber,strokeWidth:2,dot:{fill:C.amber,r:4}})));
@@ -1841,7 +1873,7 @@ function App(){
   const [tab,setTab]=useState("today");
   const [et,setEt]=useState(null); // sub-view selector for Today tab — lifted from TodayTab so swipe-back can manage it
   const [history,setHistory]=useState([]);
-  const [td,setTd]=useState({cal:0,p:0,ep:0,ca:0,fi:0,as:0,su:0,fa:0,sf:0,na:0,k:0,g:null,gReadings:[],bs:null,bd:null,pu:null,bpt:null,bpReadings:[],sl:null,ss:null,deep:null,rem:null,light:null,shr:null,bed:null,wake:null,st:null,stReadings:[],al:0,alReadings:[],ex:false,exLog:[],wt:null,wtReadings:[],meals:[],supEvents:[]});
+  const [td,setTd]=useState({cal:0,p:0,ep:0,ca:0,fi:0,as:0,su:0,fa:0,sf:0,na:0,k:0,cm:0,fl:0,g:null,gReadings:[],bs:null,bd:null,pu:null,bpt:null,bpReadings:[],sl:null,ss:null,deep:null,rem:null,light:null,shr:null,bed:null,wake:null,st:null,stReadings:[],al:0,alReadings:[],ex:false,exLog:[],wt:null,wtReadings:[],meals:[],supEvents:[]});
   const [supps,setSupps]=useState({});
   const [chatOpen,setChatOpen]=useState(false);
   const [loaded,setLoaded]=useState(false);
@@ -1951,7 +1983,7 @@ function App(){
 
   const addMeal=m=>{
     if(m.cal!=null){
-      setTd(p=>({...p,cal:(p.cal||0)+(m.cal||0),p:(p.p||0)+(m.p||0),ep:(p.ep||0)+(m.ep||m.p||0),ca:(p.ca||0)+(m.ca||0),fi:(p.fi||0)+(m.fi||0),as:(p.as||0)+(m.as||0),su:(p.su||0)+(m.su||0),fa:(p.fa||0)+(m.fa||0),sf:(p.sf||0)+(m.sf||0),na:(p.na||0)+(m.na||0),k:(p.k||0)+(m.k||0),meals:[...(p.meals||[]),{...m,t:new Date().toISOString()}]}));
+      setTd(p=>({...p,cal:(p.cal||0)+(m.cal||0),p:(p.p||0)+(m.p||0),ep:(p.ep||0)+(m.ep||m.p||0),ca:(p.ca||0)+(m.ca||0),fi:(p.fi||0)+(m.fi||0),as:(p.as||0)+(m.as||0),su:(p.su||0)+(m.su||0),fa:(p.fa||0)+(m.fa||0),sf:(p.sf||0)+(m.sf||0),na:(p.na||0)+(m.na||0),k:(p.k||0)+(m.k||0),cm:(p.cm||0)+(m.cm||0),fl:(p.fl||0)+(m.fl||0),meals:[...(p.meals||[]),{...m,t:new Date().toISOString()}]}));
     }
   };
   const addReading=r=>{/* readings stored with today data */};
