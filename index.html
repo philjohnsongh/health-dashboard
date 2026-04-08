@@ -41,9 +41,9 @@ const C={bg:"#0f172a",card:"#1e293b",card2:"#334155",bdr:"#475569",txt:"#f1f5f9"
 const TARGETS={cal:{rest:1800,ex:2000},prot:{min:110,max:140},carbs:{min:100},fib:{min:28},as:{max:20},na:{max:2300},k:{min:3000}};
 
 const SUPPS=[
-{id:"am_shake",name:"Morning Shake",time:"~9 AM",icon:"☕",items:"Whey+Collagen+Psyllium+Flax+Milk"},
+{id:"am_shake",name:"Morning Shake",time:"~9 AM",icon:"☕",items:"Whey+Collagen+Psyllium+Flax+Milk",mealId:"shake"},
 {id:"am_vit",name:"Morning Vitamins",time:"w/ breakfast",icon:"💊",items:"C 500mg, D3, B12, Ritual"},
-{id:"mid_fib",name:"Between Meals Fiber",time:"~10 AM",icon:"🥛",items:"Psyllium+Acacia water (or Kefir+Momentous)"},
+{id:"mid_fib",name:"Between Meals Fiber",time:"~10 AM",icon:"🥛",items:"Psyllium+Acacia water (or Kefir+Momentous)",mealId:"waterfib"},
 {id:"minox",name:"Minoxidil",time:"AM post-shower",icon:"💆",items:"Topical (skip 24hr post-stamp)"},
 {id:"din_vit",name:"Dinner Vitamins",time:"w/ dinner",icon:"🐟",items:"Ritual, Fish Oil, Finasteride ⚠️"},
 {id:"bed",name:"Bedtime Stack",time:"~10 PM",icon:"🌙",items:"Mg 240mg, L-Serine 2g, Ashwagandha 600mg"},
@@ -353,11 +353,11 @@ function Metric({label,value,unit,target,isMax,color}){
   const c=over?C.rose:under?C.amber:color||C.teal;
   const pct=target?Math.min((value/target)*100,110):null;
   return React.createElement("div",{style:{background:C.card,borderRadius:14,padding:"16px 16px",borderLeft:`4px solid ${c}`}},
-    React.createElement("div",{style:{fontSize:15,color:C.dim,marginBottom:5}},label),
+    React.createElement("div",{style:{fontSize:17,color:C.txt,marginBottom:6,fontWeight:600,letterSpacing:0.2}},label),
     React.createElement("div",{style:{display:"flex",alignItems:"baseline",gap:6}},
       React.createElement("span",{style:{fontSize:34,fontWeight:700,color:c,fontFamily:"monospace"}},value!=null?Math.round(value):"—"),
-      unit&&React.createElement("span",{style:{fontSize:14,color:C.dim}},unit),
-      target&&React.createElement("span",{style:{fontSize:13,color:C.dim,marginLeft:"auto"}},`/ ${target}${isMax?" max":""}`)
+      unit&&React.createElement("span",{style:{fontSize:15,color:C.txt,opacity:0.8}},unit),
+      target&&React.createElement("span",{style:{fontSize:16,color:C.txt,marginLeft:"auto",opacity:0.78,fontWeight:600}},`/ ${target}${isMax?" max":""}`)
     ),
     pct!=null&&React.createElement("div",{style:{height:4,background:C.card2,borderRadius:2,marginTop:8}},
       React.createElement("div",{style:{height:4,background:c,borderRadius:2,width:`${Math.min(pct,100)}%`,transition:"width 0.5s"}}))
@@ -531,7 +531,7 @@ function AIMealPreview({items,notes,onConfirm,onCancel}){
 // ============================================================
 // TODAY TAB
 // ============================================================
-function TodayTab({data,setData,supps,setSupps,addMeal,addReading,history,et,setEt}){
+function TodayTab({data,setData,supps,setSupps,takeSupplement,untakeSupplement,addMeal,addReading,history,et,setEt}){
   const [gv,setGv]=useState("");const [gt,setGt]=useState("");
   const [bs,setBs]=useState("");const [bd,setBd]=useState("");const [bp,setBp]=useState("");const [bpt,setBpt]=useState("");const [bpRested,setBpRested]=useState(false);
   const [sh,setSh]=useState("");const [sc,setSc]=useState("");
@@ -553,6 +553,7 @@ function TodayTab({data,setData,supps,setSupps,addMeal,addReading,history,et,set
     }
   },[et]);
   const [recording,setRecording]=useState(false);
+  const userStoppedRef=useRef(false);
   const [aiLoading,setAiLoading]=useState(false);
   const [aiPreview,setAiPreview]=useState(null);
   const [aiError,setAiError]=useState("");
@@ -567,59 +568,83 @@ function TodayTab({data,setData,supps,setSupps,addMeal,addReading,history,et,set
   const [voiceParsing,setVoiceParsing]=useState(false);
   const [voiceError,setVoiceError]=useState("");
 
-  // Record voice into voiceTranscript and on stop, parse via Sonnet for the given kind
+  // Record voice into voiceTranscript and on stop, parse via Sonnet for the given kind.
+  // KEY BEHAVIOR: Press once to start, press again to stop. The browser's Web Speech API
+  // will auto-end on silence, so we track whether the user intentionally stopped and
+  // restart the recognizer on silent endings to keep listening until a real user tap.
   const startVoiceCapture=(kind)=>{
     var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
     if(!SR){alert("Speech recognition not supported. Use Chrome on Pixel.");return}
+    // If already recording, this is a user-initiated STOP.
     if(recording&&recognitionRef.current){
-      recognitionRef.current.stop();
+      userStoppedRef.current=true;
+      try{recognitionRef.current.stop()}catch(e){}
       return;
     }
+    userStoppedRef.current=false;
     setVoiceError("");setVoiceTranscript("");setVoiceMode(kind);
-    var rec=new SR();rec.continuous=true;rec.interimResults=true;rec.lang="en-US";
     var finalText="";
-    rec.onresult=function(e){
-      var interim="";
-      for(var i=0;i<e.results.length;i++){
-        if(e.results[i].isFinal)finalText+=e.results[i][0].transcript;
-        else interim+=e.results[i][0].transcript;
-      }
-      setVoiceTranscript(finalText+interim);
-    };
-    rec.onerror=function(ev){setRecording(false);setVoiceError("Voice error: "+(ev.error||"unknown"))};
-    rec.onend=async function(){
-      setRecording(false);
-      const text=(finalText||voiceTranscript||"").trim();
-      if(!text){setVoiceMode(null);return}
-      setVoiceParsing(true);
-      try{
-        const parsed=await parseVoiceFields(kind,text);
-        if(kind==="glucose"){
-          if(parsed.v!=null)setGv(String(parsed.v));
-          if(parsed.t)setGt(parsed.t);
-        }else if(kind==="sleep"){
-          if(parsed.sl!=null)setSh(String(parsed.sl));
-          if(parsed.ss!=null)setSc(String(parsed.ss));
-          if(parsed.deep!=null)setSdeep(String(parsed.deep));
-          if(parsed.rem!=null)setSrem(String(parsed.rem));
-          if(parsed.light!=null)setSlight(String(parsed.light));
-          if(parsed.shr!=null)setSshr(String(parsed.shr));
-          if(parsed.bed)setSbed(parsed.bed);
-          if(parsed.wake)setSwake(parsed.wake);
-        }else if(kind==="bp"){
-          if(parsed.s!=null)setBs(String(parsed.s));
-          if(parsed.d!=null)setBd(String(parsed.d));
-          if(parsed.p!=null)setBp(String(parsed.p));
-          if(parsed.t)setBpt(parsed.t);
-          if(parsed.rested)setBpRested(true);
+    var startRec=function(){
+      var rec=new SR();rec.continuous=true;rec.interimResults=true;rec.lang="en-US";
+      rec.onresult=function(e){
+        var interim="";
+        for(var i=0;i<e.results.length;i++){
+          if(e.results[i].isFinal)finalText+=e.results[i][0].transcript;
+          else interim+=e.results[i][0].transcript;
         }
-        setVoiceMode(null);setVoiceTranscript("");
-      }catch(err){
-        setVoiceError("Could not parse: "+err.message);
-      }
-      setVoiceParsing(false);
+        setVoiceTranscript(finalText+interim);
+      };
+      rec.onerror=function(ev){
+        // no-speech and aborted are normal during long silences — don't blow up
+        if(ev.error==="no-speech"||ev.error==="aborted")return;
+        userStoppedRef.current=true;
+        setRecording(false);
+        setVoiceError("Voice error: "+(ev.error||"unknown"));
+      };
+      rec.onend=async function(){
+        // If this ended because of silence (not a user tap), restart to keep listening
+        if(!userStoppedRef.current){
+          try{rec.start();return}catch(e){
+            // If restart fails, fall through to parse what we have
+          }
+        }
+        // User stopped — finalize and parse
+        setRecording(false);
+        const text=(finalText||"").trim();
+        if(!text){setVoiceMode(null);return}
+        setVoiceParsing(true);
+        try{
+          const parsed=await parseVoiceFields(kind,text);
+          if(kind==="glucose"){
+            if(parsed.v!=null)setGv(String(parsed.v));
+            if(parsed.t)setGt(parsed.t);
+          }else if(kind==="sleep"){
+            if(parsed.sl!=null)setSh(String(parsed.sl));
+            if(parsed.ss!=null)setSc(String(parsed.ss));
+            if(parsed.deep!=null)setSdeep(String(parsed.deep));
+            if(parsed.rem!=null)setSrem(String(parsed.rem));
+            if(parsed.light!=null)setSlight(String(parsed.light));
+            if(parsed.shr!=null)setSshr(String(parsed.shr));
+            if(parsed.bed)setSbed(parsed.bed);
+            if(parsed.wake)setSwake(parsed.wake);
+          }else if(kind==="bp"){
+            if(parsed.s!=null)setBs(String(parsed.s));
+            if(parsed.d!=null)setBd(String(parsed.d));
+            if(parsed.p!=null)setBp(String(parsed.p));
+            if(parsed.t)setBpt(parsed.t);
+            if(parsed.rested)setBpRested(true);
+          }
+          setVoiceMode(null);setVoiceTranscript("");
+        }catch(err){
+          setVoiceError("Could not parse: "+err.message);
+        }
+        setVoiceParsing(false);
+      };
+      recognitionRef.current=rec;
+      try{rec.start()}catch(e){}
     };
-    recognitionRef.current=rec;rec.start();setRecording(true);
+    startRec();
+    setRecording(true);
   };
 
   const startVoice=()=>{
@@ -691,8 +716,8 @@ function TodayTab({data,setData,supps,setSupps,addMeal,addReading,history,et,set
         pending.map(s=>React.createElement(SuppCard,{key:s.id,s,done:false,expanded:expandedSupp===s.id,
           onTap:()=>{
             if(expandedSupp===s.id){
-              // Second tap on the same expanded card → mark taken and collapse
-              setSupps(p=>({...p,[s.id]:true}));
+              // Second tap on the same expanded card → mark taken + auto-log meal/event
+              takeSupplement(s.id);
               setExpandedSupp(null);
             }else{
               // First tap (or switching from another) → expand to show ingredients
@@ -735,43 +760,45 @@ function TodayTab({data,setData,supps,setSupps,addMeal,addReading,history,et,set
       React.createElement("div",{style:{fontSize:13,color:C.dim}},`Sleep ${data.sl}hr, ${data.al||0} drinks${data.al>0?" ⚠️":""}, ${data.as||0}g sugar, ${data.ex?"exercised ✓":"rest day"}`)
     ),
 
-    // Glucose form
-    et==="glucose"&&React.createElement("div",{key:"f_g",style:{background:C.card,borderRadius:12,padding:14,border:`1px solid ${C.bdr}`}},
-      React.createElement("div",{style:{fontSize:16,fontWeight:600,marginBottom:10}},"Add Glucose Reading"),
-      React.createElement(Inp,{label:"Reading",value:gv,onChange:setGv,placeholder:"96",unit:"mg/dL"}),
-      React.createElement("div",{style:{fontSize:13,color:C.dim,margin:"10px 0 6px",fontWeight:600}},"TIME"),
-      React.createElement(TimePicker,{value:gt,onChange:setGt}),
-      // Voice input
-      React.createElement("div",{style:{marginTop:12}},
+    // Glucose form — Speak + Add Reading buttons at the top, manual entry below
+    et==="glucose"&&(()=>{
+      const addGlucoseReading=()=>{
+        if(!gv)return;
+        const entry={v:+gv,t:gt||"",ts:new Date().toISOString()};
+        setData(p=>{
+          const next=[...(p.gReadings||[]),entry];
+          return {...p,gReadings:next,g:next[0].v};
+        });
+        setGv("");
+      };
+      return React.createElement("div",{key:"f_g",style:{background:C.card,borderRadius:12,padding:14,border:`1px solid ${C.bdr}`}},
+        // Action buttons at top
         React.createElement(Btn,{onClick:()=>startVoiceCapture("glucose"),color:recording&&voiceMode==="glucose"?C.rose:C.purp,
-          style:{width:"100%",justifyContent:"center"}},
-          recording&&voiceMode==="glucose"?["⏹ Stop Recording"]:["🎤 Speak Reading + Time"])
-      ),
-      voiceMode==="glucose"&&recording&&React.createElement("div",{style:{marginTop:8,padding:"10px 12px",background:C.rose+"15",borderRadius:8,fontSize:13,color:C.rose,display:"flex",alignItems:"center",gap:8}},
-        React.createElement("span",{style:{display:"inline-block",width:10,height:10,borderRadius:5,background:C.rose,animation:"pulse 1s infinite",flexShrink:0}}),
-        React.createElement("span",{style:{flex:1}},voiceTranscript||"Listening... say something like \"ninety-six at seven thirty AM\"")
-      ),
-      voiceParsing&&voiceMode==="glucose"&&React.createElement("div",{style:{marginTop:8,padding:"10px 12px",background:C.teal+"15",borderRadius:8,fontSize:13,color:C.teal,textAlign:"center"}},"✨ Parsing..."),
-      voiceError&&voiceMode==="glucose"&&React.createElement("div",{style:{marginTop:8,padding:"10px 12px",background:C.rose+"15",borderRadius:8,fontSize:12,color:C.rose}},"⚠️ "+voiceError),
-      React.createElement("div",{style:{marginTop:12}},
-        React.createElement(Btn,{onClick:()=>{
-          if(!gv)return;
-          const entry={v:+gv,t:gt||"",ts:new Date().toISOString()};
-          setData(p=>{
-            const next=[...(p.gReadings||[]),entry];
-            return {...p,gReadings:next,g:next[0].v};
-          });
-          setGv("");
-        },color:C.grn,style:{width:"100%",justifyContent:"center"}},["+ Add Reading"])
-      )
-    ),
+          style:{width:"100%",justifyContent:"center",marginBottom:8}},
+          recording&&voiceMode==="glucose"?["⏹ Stop Recording"]:["🎤 Speak Reading + Time"]),
+        React.createElement(Btn,{onClick:addGlucoseReading,color:C.grn,style:{width:"100%",justifyContent:"center",marginBottom:10}},["+ Add Reading"]),
+        voiceMode==="glucose"&&recording&&React.createElement("div",{style:{marginBottom:10,padding:"10px 12px",background:C.rose+"15",borderRadius:8,fontSize:13,color:C.rose,display:"flex",alignItems:"center",gap:8}},
+          React.createElement("span",{style:{display:"inline-block",width:10,height:10,borderRadius:5,background:C.rose,animation:"pulse 1s infinite",flexShrink:0}}),
+          React.createElement("span",{style:{flex:1}},voiceTranscript||"Listening... tap stop when done. Say e.g. \"ninety-six at seven thirty AM\"")
+        ),
+        voiceParsing&&voiceMode==="glucose"&&React.createElement("div",{style:{marginBottom:10,padding:"10px 12px",background:C.teal+"15",borderRadius:8,fontSize:13,color:C.teal,textAlign:"center"}},"✨ Parsing..."),
+        voiceError&&voiceMode==="glucose"&&React.createElement("div",{style:{marginBottom:10,padding:"10px 12px",background:C.rose+"15",borderRadius:8,fontSize:12,color:C.rose}},"⚠️ "+voiceError),
+        // Manual entry pane below
+        React.createElement("div",{style:{paddingTop:10,borderTop:`1px solid ${C.bdr}66`}},
+          React.createElement("div",{style:{fontSize:14,fontWeight:600,color:C.dim,marginBottom:8,letterSpacing:0.3}},"MANUAL ENTRY"),
+          React.createElement(Inp,{label:"Reading",value:gv,onChange:setGv,placeholder:"96",unit:"mg/dL"}),
+          React.createElement("div",{style:{fontSize:13,color:C.dim,margin:"10px 0 6px",fontWeight:600}},"TIME"),
+          React.createElement(TimePicker,{value:gt,onChange:setGt})
+        )
+      );
+    })(),
 
     // BP form — multi-reading with protocol average (discard 1st, avg 2nd+3rd)
     et==="bp"&&(()=>{
       const readings=data.bpReadings||[];
       const addReadingBP=()=>{
         if(!bs||!bd)return;
-        const newReading={s:+bs,d:+bd,p:bp?+bp:null,t:bpt||"",rested:bpRested,avg:false};
+        const newReading={s:+bs,d:+bd,p:bp?+bp:null,t:bpt||"",rested:bpRested,avg:false,ts:new Date().toISOString()};
         const next=[...readings,newReading];
         const na=bpAverage(next);
         setData(p=>({...p,bpReadings:next,bs:na&&na.s!=null?na.s:null,bd:na&&na.d!=null?na.d:null,pu:na&&na.p!=null?na.p:null}));
@@ -779,31 +806,35 @@ function TodayTab({data,setData,supps,setSupps,addMeal,addReading,history,et,set
       };
       return React.createElement("div",{key:"f_bp",style:{background:C.card,borderRadius:12,padding:14,border:`1px solid ${C.bdr}`}},
         React.createElement("div",{style:{fontSize:16,fontWeight:600,marginBottom:10}},`Add Reading #${readings.length+1}`),
-        // Voice input — at the top so it can fill the fields below
+        // Action buttons at top — Speak then Add Reading directly under it
         React.createElement(Btn,{onClick:()=>startVoiceCapture("bp"),color:recording&&voiceMode==="bp"?C.rose:C.purp,
-          style:{width:"100%",justifyContent:"center",marginBottom:10}},
+          style:{width:"100%",justifyContent:"center",marginBottom:8}},
           recording&&voiceMode==="bp"?["⏹ Stop Recording"]:["🎤 Speak BP Reading"]),
+        React.createElement(Btn,{onClick:addReadingBP,color:C.grn,style:{width:"100%",justifyContent:"center",marginBottom:10}},["+ Add Reading"]),
         voiceMode==="bp"&&recording&&React.createElement("div",{style:{marginBottom:10,padding:"10px 12px",background:C.rose+"15",borderRadius:8,fontSize:13,color:C.rose,display:"flex",alignItems:"flex-start",gap:8}},
           React.createElement("span",{style:{display:"inline-block",width:10,height:10,borderRadius:5,background:C.rose,animation:"pulse 1s infinite",flexShrink:0,marginTop:5}}),
-          React.createElement("span",{style:{flex:1,lineHeight:1.4}},voiceTranscript||"Listening... say something like \"one fifteen over seventy two pulse sixty eight rested at seven thirty AM\"")
+          React.createElement("span",{style:{flex:1,lineHeight:1.4}},voiceTranscript||"Listening... tap stop when done. E.g. \"one fifteen over seventy two pulse sixty eight rested at seven thirty AM\"")
         ),
         voiceParsing&&voiceMode==="bp"&&React.createElement("div",{style:{marginBottom:10,padding:"10px 12px",background:C.teal+"15",borderRadius:8,fontSize:13,color:C.teal,textAlign:"center"}},"✨ Parsing BP reading..."),
         voiceError&&voiceMode==="bp"&&React.createElement("div",{style:{marginBottom:10,padding:"10px 12px",background:C.rose+"15",borderRadius:8,fontSize:12,color:C.rose}},"⚠️ "+voiceError),
-        React.createElement(Inp,{label:"Systolic",value:bs,onChange:setBs,placeholder:"105",unit:"mmHg"}),
-        React.createElement(Inp,{label:"Diastolic",value:bd,onChange:setBd,placeholder:"72",unit:"mmHg"}),
-        React.createElement(Inp,{label:"Pulse",value:bp,onChange:setBp,placeholder:"67",unit:"bpm"}),
-        React.createElement("div",{style:{fontSize:13,color:C.dim,margin:"10px 0 6px",fontWeight:600}},"TIME"),
-        React.createElement(TimePicker,{value:bpt,onChange:setBpt}),
-        // Rested toggle
-        React.createElement("div",{onClick:()=>setBpRested(!bpRested),
-          style:{marginTop:12,padding:"12px 14px",background:bpRested?C.teal+"20":C.card2,border:`1px solid ${bpRested?C.teal:C.bdr}`,borderRadius:10,cursor:"pointer",display:"flex",alignItems:"center",gap:10}},
-          React.createElement("div",{style:{width:22,height:22,borderRadius:4,border:`2px solid ${bpRested?C.teal:C.bdr}`,background:bpRested?C.teal:"transparent",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:14,fontWeight:700,flexShrink:0}},bpRested?"✓":""),
-          React.createElement("div",{style:{flex:1}},
-            React.createElement("div",{style:{fontSize:14,color:C.txt,fontWeight:600}},"Rested 5+ min before reading"),
-            React.createElement("div",{style:{fontSize:11,color:C.dim}},"Protocol: 5-min seated rest before measurement")
+        // Manual entry pane below
+        React.createElement("div",{style:{paddingTop:10,borderTop:`1px solid ${C.bdr}66`}},
+          React.createElement("div",{style:{fontSize:14,fontWeight:600,color:C.dim,marginBottom:8,letterSpacing:0.3}},"MANUAL ENTRY"),
+          React.createElement(Inp,{label:"Systolic",value:bs,onChange:setBs,placeholder:"105",unit:"mmHg"}),
+          React.createElement(Inp,{label:"Diastolic",value:bd,onChange:setBd,placeholder:"72",unit:"mmHg"}),
+          React.createElement(Inp,{label:"Pulse",value:bp,onChange:setBp,placeholder:"67",unit:"bpm"}),
+          React.createElement("div",{style:{fontSize:13,color:C.dim,margin:"10px 0 6px",fontWeight:600}},"TIME"),
+          React.createElement(TimePicker,{value:bpt,onChange:setBpt}),
+          // Rested toggle
+          React.createElement("div",{onClick:()=>setBpRested(!bpRested),
+            style:{marginTop:12,padding:"12px 14px",background:bpRested?C.teal+"20":C.card2,border:`1px solid ${bpRested?C.teal:C.bdr}`,borderRadius:10,cursor:"pointer",display:"flex",alignItems:"center",gap:10}},
+            React.createElement("div",{style:{width:22,height:22,borderRadius:4,border:`2px solid ${bpRested?C.teal:C.bdr}`,background:bpRested?C.teal:"transparent",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:14,fontWeight:700,flexShrink:0}},bpRested?"✓":""),
+            React.createElement("div",{style:{flex:1}},
+              React.createElement("div",{style:{fontSize:14,color:C.txt,fontWeight:600}},"Rested 5+ min before reading"),
+              React.createElement("div",{style:{fontSize:11,color:C.dim}},"Protocol: 5-min seated rest before measurement")
+            )
           )
-        ),
-        React.createElement(Btn,{onClick:addReadingBP,color:C.grn,style:{marginTop:12,width:"100%",justifyContent:"center"}},["+ Add Reading"])
+        )
       );
     })(),
 
@@ -969,40 +1000,7 @@ function TodayTab({data,setData,supps,setSupps,addMeal,addReading,history,et,set
       aiPreview&&React.createElement(AIMealPreview,{items:aiPreview.items,notes:aiPreview.notes,onConfirm:confirmAI,onCancel:()=>setAiPreview(null)})
     ),
 
-    // Today's readings summary
-    React.createElement("div",{key:"readings",style:{background:C.card,borderRadius:12,padding:14,border:`1px solid ${C.bdr}`}},
-      React.createElement("div",{style:{fontSize:16,fontWeight:600,marginBottom:10}},"TODAY'S READINGS"),
-      React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}},
-        [["Glucose",data.g,"mg/dL",C.teal],["BP",data.bs?`${data.bs}/${data.bd}`:"—","",C.blue],["Pulse",data.pu,"bpm",C.purp],
-         ["Sleep",data.sl,"hrs",C.amber],["Stress",data.st,"/6",C.rose],["Weight",data.wt,"lbs",C.grn]].map(([l,v,u,c])=>
-          React.createElement("div",{key:l,style:{textAlign:"center",padding:"4px 0"}},
-            React.createElement("div",{style:{fontSize:15,color:C.dim}},l),
-            React.createElement("div",{style:{fontSize:28,fontWeight:700,color:v&&v!=="—"?c:C.dim,fontFamily:"monospace"}},v||"—"),
-            React.createElement("div",{style:{fontSize:14,color:C.dim}},u)
-          )
-        )
-      ),
-      (data.deep!=null||data.rem!=null||data.light!=null||data.shr!=null||data.bed||data.wake||data.ss!=null)&&React.createElement("div",{style:{marginTop:10,paddingTop:10,borderTop:`1px solid ${C.bdr}33`}},
-        React.createElement("div",{style:{fontSize:12,color:C.amber,fontWeight:600,marginBottom:6}},"SLEEP DETAIL"),
-        React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:6,fontSize:12,fontFamily:"monospace"}},
-          [["Score",data.ss],["Deep",data.deep!=null?data.deep+"m":null],["REM",data.rem!=null?data.rem+"m":null],["Light",data.light!=null?data.light+"m":null],["SlpHR",data.shr!=null?data.shr:null],["Bed",data.bed],["Wake",data.wake]].filter(([,v])=>v!=null&&v!=="").map(([l,v])=>
-            React.createElement("div",{key:l,style:{textAlign:"center"}},
-              React.createElement("div",{style:{color:C.dim,fontSize:10}},l),
-              React.createElement("div",{style:{color:C.txt,fontSize:13,fontWeight:600}},v)
-            )
-          )
-        )
-      ),
-      data.exLog&&data.exLog.length>0&&React.createElement("div",{style:{marginTop:10,paddingTop:10,borderTop:`1px solid ${C.bdr}33`}},
-        React.createElement("div",{style:{fontSize:12,color:C.grn,fontWeight:600,marginBottom:6}},`💪 WORKOUT — ${data.exLog.length} exercise${data.exLog.length>1?"s":""}`),
-        React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:4}},
-          data.exLog.map((e,i)=>React.createElement("div",{key:i,style:{display:"flex",justifyContent:"space-between",fontSize:13,fontFamily:"monospace",padding:"3px 0"}},
-            React.createElement("span",{style:{color:C.txt}},e.n),
-            React.createElement("span",{style:{color:C.dim}},`${e.s||"-"}×${e.r||"-"}${e.w?" @ "+e.w+"lb":""}${e.m?" #"+e.m:""}`)
-          ))
-        )
-      )
-    ),
+    // (Today's Readings card removed per Phil — data still accessible via the LOG AND SHOW buttons)
   ].filter(Boolean);
 
   // ==========================================================
@@ -1219,10 +1217,13 @@ function TodayTab({data,setData,supps,setSupps,addMeal,addReading,history,et,set
       e("div",{style:{fontSize:22,fontWeight:700,color:C.txt,flex:1}},titles[et]||"")
     );
 
+    // For Sleep, Meals, Exercise, Alcohol — history pane goes BELOW the form.
+    // For Glucose, BP, Stress, Weight — history pane stays ABOVE the form.
+    const historyBelow=et==="sleep"||et==="meal"||et==="exercise"||et==="alcohol";
     return e("div",{style:{padding:"12px 16px 100px",display:"flex",flexDirection:"column",gap:14}},
       header,
-      histEl,
-      formEl
+      historyBelow?formEl:histEl,
+      historyBelow?histEl:formEl
     );
   }
 
@@ -1327,11 +1328,11 @@ function AlertsTab({data}){
 // ============================================================
 // PROTOCOL TAB
 // ============================================================
-function ProtocolTab({supps,setSupps}){
+function ProtocolTab({supps,setSupps,takeSupplement,untakeSupplement}){
   return React.createElement("div",{style:{padding:"12px 16px 100px",display:"flex",flexDirection:"column",gap:14}},
     React.createElement("div",null,
       React.createElement("div",{style:{fontSize:14,fontWeight:700,marginBottom:8}},"Supplement Protocol"),
-      React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:6}},SUPPS.map(s=>React.createElement(SuppCard,{key:s.id,s,done:!!supps[s.id],onTap:()=>setSupps(p=>({...p,[s.id]:!p[s.id]}))})))
+      React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:6}},SUPPS.map(s=>React.createElement(SuppCard,{key:s.id,s,done:!!supps[s.id],onTap:()=>{if(supps[s.id])untakeSupplement(s.id);else takeSupplement(s.id)}})))
     ),
     React.createElement("div",null,
       React.createElement("div",{style:{fontSize:14,fontWeight:700,marginBottom:8}},"Daily Targets"),
@@ -1674,7 +1675,7 @@ function App(){
   const [tab,setTab]=useState("today");
   const [et,setEt]=useState(null); // sub-view selector for Today tab — lifted from TodayTab so swipe-back can manage it
   const [history,setHistory]=useState([]);
-  const [td,setTd]=useState({cal:0,p:0,ep:0,ca:0,fi:0,as:0,su:0,fa:0,sf:0,na:0,k:0,g:null,gReadings:[],bs:null,bd:null,pu:null,bpt:null,bpReadings:[],sl:null,ss:null,deep:null,rem:null,light:null,shr:null,bed:null,wake:null,st:null,stReadings:[],al:0,alReadings:[],ex:false,exLog:[],wt:null,wtReadings:[],meals:[]});
+  const [td,setTd]=useState({cal:0,p:0,ep:0,ca:0,fi:0,as:0,su:0,fa:0,sf:0,na:0,k:0,g:null,gReadings:[],bs:null,bd:null,pu:null,bpt:null,bpReadings:[],sl:null,ss:null,deep:null,rem:null,light:null,shr:null,bed:null,wake:null,st:null,stReadings:[],al:0,alReadings:[],ex:false,exLog:[],wt:null,wtReadings:[],meals:[],supEvents:[]});
   const [supps,setSupps]=useState({});
   const [chatOpen,setChatOpen]=useState(false);
   const [loaded,setLoaded]=useState(false);
@@ -1789,6 +1790,25 @@ function App(){
   };
   const addReading=r=>{/* readings stored with today data */};
 
+  // Mark a supplement taken AND auto-log its associated meal (if any) AND
+  // record a timestamped supplement/med event. Used by both the Today tab
+  // "Supplements Remaining" grid and the Protocol tab checklist.
+  const takeSupplement=(id)=>{
+    const supp=SUPPS.find(s=>s.id===id);
+    if(!supp)return;
+    setSupps(p=>({...p,[id]:true}));
+    if(supp.mealId){
+      const meal=QMEALS.find(m=>m.id===supp.mealId);
+      if(meal)addMeal(meal);
+    }
+    setTd(p=>({...p,supEvents:[...(p.supEvents||[]),{id:supp.id,name:supp.name,items:supp.items,ts:new Date().toISOString()}]}));
+  };
+  const untakeSupplement=(id)=>{
+    // Just uncheck the box; don't retroactively remove logged meal or event.
+    // (User can manually remove from Meals list or supEvents if needed.)
+    setSupps(p=>({...p,[id]:false}));
+  };
+
   const tabs=[{id:"today",l:"Today",i:"📊"},{id:"trends",l:"Trends",i:"📈"},{id:"alerts",l:"Alerts",i:"🔔"},{id:"protocol",l:"Protocol",i:"📋"},{id:"export",l:"Export",i:"📤"},{id:"settings",l:"Settings",i:"⚙️"}];
 
   if(!loaded)return React.createElement("div",{style:{background:C.bg,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",color:C.teal}},"Loading...");
@@ -1806,10 +1826,10 @@ function App(){
     ),
     // Content
     React.createElement("div",{style:{flex:1,overflowY:"auto",paddingBottom:80}},
-      tab==="today"&&React.createElement(TodayTab,{data:td,setData:setTd,supps,setSupps,addMeal,addReading,history,et,setEt:navSetEt}),
+      tab==="today"&&React.createElement(TodayTab,{data:td,setData:setTd,supps,setSupps,takeSupplement,untakeSupplement,addMeal,addReading,history,et,setEt:navSetEt}),
       tab==="trends"&&React.createElement(TrendsTab,{history}),
       tab==="alerts"&&React.createElement(AlertsTab,{data:td}),
-      tab==="protocol"&&React.createElement(ProtocolTab,{supps,setSupps}),
+      tab==="protocol"&&React.createElement(ProtocolTab,{supps,setSupps,takeSupplement,untakeSupplement}),
       tab==="export"&&React.createElement(ExportTab,{data:td,history}),
       tab==="settings"&&React.createElement(SettingsTab,{history,setHistory}),
     ),
