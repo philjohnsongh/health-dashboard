@@ -317,6 +317,40 @@ function fileToBase64(file){
   });
 }
 
+// Analyze a Fitbit sleep screenshot via Claude Sonnet vision.
+// Returns the same shape as the voice parser for kind="sleep".
+async function analyzeSleepPhoto(imageB64,imageMedia){
+  const key=LS.get("api_key");
+  if(!key)throw new Error("No API key. Set one in Settings.");
+  const schema=`{"sl":<hours as decimal, e.g. 8.25>,"ss":<sleep score 0-100>,"deep":<deep sleep minutes>,"rem":<REM minutes>,"light":<light sleep minutes>,"shr":<sleeping heart rate bpm>,"bed":"<bed time H:MM AM/PM>","wake":"<wake time H:MM AM/PM>"}`;
+  const sys=`You are a parser for a health tracking app. The user will send you a screenshot from the Fitbit app's sleep screen (Pixel Watch data). Extract the sleep metrics and return ONLY a valid JSON object matching this exact schema:
+
+${schema}
+
+Rules:
+- sl: total time asleep in hours as a decimal. Fitbit usually displays as "8hr 15min" or "8h 15m" → 8.25. If the screen shows "time in bed" and "asleep" separately, use the asleep value.
+- ss: Sleep Score (usually a large number 0-100 near the top).
+- deep / rem / light: sleep stage durations IN MINUTES. Fitbit typically shows these as "1hr 22min" per stage — convert hours to minutes (e.g. 1hr 22min = 82). "Awake" time should be ignored.
+- shr: the average resting/sleeping heart rate shown in the sleep screen (bpm).
+- bed: the time the user fell asleep ("10:45 PM").
+- wake: the time the user woke up ("7:00 AM").
+- If a field is not visible in the screenshot, set it to null. Do NOT guess.
+- Return ONLY the JSON object. No prose, no markdown fences, no explanation.`;
+  const userContent=[
+    {type:"image",source:{type:"base64",media_type:imageMedia||"image/jpeg",data:imageB64}},
+    {type:"text",text:"Extract the sleep metrics from this Fitbit screenshot and return the JSON."}
+  ];
+  const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:500,system:sys,messages:[{role:"user",content:userContent}]})});
+  const d=await r.json();
+  if(d.error)throw new Error(d.error.message||"API error");
+  let raw="";
+  if(d.content&&Array.isArray(d.content)){raw=d.content.filter(b=>b.type==="text").map(b=>b.text).join("\n")}
+  raw=raw.replace(/```json|```/g,"").trim();
+  const m=raw.match(/\{[\s\S]*\}/);
+  if(!m)throw new Error("Could not parse: "+raw.slice(0,200));
+  try{return JSON.parse(m[0])}catch(e){throw new Error("Invalid JSON: "+e.message)}
+}
+
 // Voice-to-fields parser. Sends a free-form spoken transcript to Claude Sonnet
 // with a tight schema and returns a parsed JSON object. `kind` is "glucose" or "sleep".
 async function parseVoiceFields(kind,transcript){
@@ -332,9 +366,44 @@ async function parseVoiceFields(kind,transcript){
   }else if(kind==="bp"){
     schema=`{"s":<systolic mmHg>,"d":<diastolic mmHg>,"p":<pulse bpm or null>,"t":"<H:MM AM/PM or empty>","rested":<true if user says rested/5min/seated, otherwise false>}`;
     instructions=`Extract a blood pressure reading from the transcript. Common phrasings: "one fifteen over seventy-two pulse sixty-eight" → s:115, d:72, p:68. "Rested" or "after five minutes" or "seated rest" → rested:true. Time like "seven thirty AM" formats as "7:30 AM". Pulse is optional.`;
+  }else if(kind==="exercise"){
+    const known=["Bench Press","Incline Press","Chest Fly","Shoulder Press","Triceps Extension","Chin-ups (assist)","Lat Pulldown","Rows","Bicep Curls","Squats","Calf Raises","1-mile Run","Zone 2 Walk"];
+    schema=`{"exercises":[{"n":"<exercise name>","s":<sets number or null>,"r":<reps number or null>,"w":<weight in lb or null>,"m":<machine setting number or null>}]}`;
+    instructions=`Extract a list of exercises from the transcript. Each exercise has a name (n), sets (s), reps (r), weight in pounds (w), and machine setting (m, optional — only for machines where the setting is a number on a dial, not the weight).
+
+MATCH TO KNOWN EXERCISES (use these exact names when the user describes any of them):
+${known.map(k=>"- "+k).join("\n")}
+
+Matching rules:
+- "bench" / "bench press" / "bench 130" → "Bench Press"
+- "incline" / "incline bench" → "Incline Press"
+- "fly" / "chest fly" / "pec fly" → "Chest Fly"
+- "shoulder press" / "OHP" / "overhead press" → "Shoulder Press"
+- "triceps" / "tricep extension" / "pushdown" → "Triceps Extension"
+- "chin-up" / "chin ups" / "pull-up with assist" → "Chin-ups (assist)"
+- "lat pulldown" / "pulldown" → "Lat Pulldown"
+- "rows" / "rowing" / "cable row" / "seated row" → "Rows"
+- "curls" / "bicep curls" / "biceps" → "Bicep Curls"
+- "squats" / "squatting" → "Squats"
+- "calf raise" / "calves" → "Calf Raises"
+- "mile" / "ran a mile" / "one mile run" → "1-mile Run"
+- "walk" / "zone two walk" → "Zone 2 Walk"
+- If the user describes an exercise NOT on the list (e.g. "face pulls", "deadlift"), use their own name verbatim in title case.
+
+Parsing rules:
+- "three sets of ten at one thirty" → s:3, r:10, w:130
+- "four by eight bench at one thirty-five" → s:4, r:8, w:135, matched to "Bench Press"
+- "bench one thirty for three sets of ten" → s:3, r:10, w:130, matched to "Bench Press"
+- "curls thirty pounds four sets eight reps" → s:4, r:8, w:30, matched to "Bicep Curls"
+- "rows at fifty, three sets of ten" → s:3, r:10, w:50, matched to "Rows"
+- "lat pulldown setting eleven, three by ten" → s:3, r:10, m:11, matched to "Lat Pulldown" (machine setting, not weight)
+- "ran a mile" → n:"1-mile Run", s:null, r:null, w:null
+- "squats bodyweight three sets of twenty" → s:3, r:20, w:null, matched to "Squats"
+- If a field is not mentioned, set it to null. Do NOT guess.
+- Return exercises in the order the user mentioned them.`;
   }else throw new Error("Unknown voice kind: "+kind);
   const sys=`You are a parser for a health tracking app. ${instructions}\n\nReturn ONLY a single valid JSON object matching this schema:\n${schema}\n\nNo prose, no markdown fences, no explanation. If a field is not mentioned in the transcript, set it to null. Numbers must be numbers, not strings.`;
-  const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:300,system:sys,messages:[{role:"user",content:transcript}]})});
+  const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:kind==="exercise"?1200:300,system:sys,messages:[{role:"user",content:transcript}]})});
   const d=await r.json();
   if(d.error)throw new Error(d.error.message||"API error");
   let raw="";
@@ -348,7 +417,7 @@ async function parseVoiceFields(kind,transcript){
 // ============================================================
 // SMALL COMPONENTS
 // ============================================================
-function Metric({label,value,unit,target,isMax,color}){
+function Metric({label,value,unit,target,isMax,color,sub}){
   const over=isMax&&value>target;const under=!isMax&&target&&value<target;
   const c=over?C.rose:under?C.amber:color||C.teal;
   const pct=target?Math.min((value/target)*100,110):null;
@@ -359,6 +428,7 @@ function Metric({label,value,unit,target,isMax,color}){
       unit&&React.createElement("span",{style:{fontSize:15,color:C.txt,opacity:0.8}},unit),
       target&&React.createElement("span",{style:{fontSize:16,color:C.txt,marginLeft:"auto",opacity:0.78,fontWeight:600}},`/ ${target}${isMax?" max":""}`)
     ),
+    sub&&React.createElement("div",{style:{fontSize:12,color:C.dim,marginTop:4,fontFamily:"monospace"}},sub),
     pct!=null&&React.createElement("div",{style:{height:4,background:C.card2,borderRadius:2,marginTop:8}},
       React.createElement("div",{style:{height:4,background:c,borderRadius:2,width:`${Math.min(pct,100)}%`,transition:"width 0.5s"}}))
   );
@@ -462,6 +532,8 @@ function TimePicker({value,onChange}){
   };
 
   return React.createElement("div",{style:{background:C.card2,borderRadius:10,padding:10,border:`1px solid ${C.bdr}`}},
+    React.createElement("button",{onClick:setNow,
+      style:{marginBottom:10,width:"100%",background:"transparent",border:`1px solid ${C.teal}60`,borderRadius:6,padding:"8px",color:C.teal,fontSize:13,cursor:"pointer",fontFamily:"inherit"}},"⏱ Set to now"),
     React.createElement("div",{style:{display:"flex",gap:8,position:"relative",alignItems:"stretch"}},
       // Center highlight band (non-interactive overlay)
       React.createElement("div",{style:{position:"absolute",top:ROW*1.5,left:0,right:0,height:ROW,background:C.teal+"15",borderTop:`1px solid ${C.teal}50`,borderBottom:`1px solid ${C.teal}50`,pointerEvents:"none",borderRadius:4}}),
@@ -483,9 +555,7 @@ function TimePicker({value,onChange}){
         ["AM","PM"].map(x=>React.createElement("button",{key:x,onClick:()=>setAp(x),
           style:{padding:"12px 14px",background:ap===x?C.teal:C.bg,border:`1px solid ${ap===x?C.teal:C.bdr}`,borderRadius:6,color:ap===x?"#fff":C.dim,fontSize:14,fontWeight:700,cursor:"pointer",minWidth:52}},x))
       )
-    ),
-    React.createElement("button",{onClick:setNow,
-      style:{marginTop:10,width:"100%",background:"transparent",border:`1px solid ${C.teal}60`,borderRadius:6,padding:"8px",color:C.teal,fontSize:13,cursor:"pointer",fontFamily:"inherit"}},"⏱ Set to now")
+    )
   );
 }
 
@@ -552,6 +622,25 @@ function TodayTab({data,setData,supps,setSupps,takeSupplement,untakeSupplement,a
       setExRows(names.map(n=>({n,s:"",r:"",w:"",m:"",_def:defaults[n]||null})));
     }
   },[et]);
+
+  // Paste handler: when the Sleep sub-view is open, a pasted image (from
+  // clipboard — e.g. after taking a Fitbit screenshot on Pixel) is fed
+  // directly into the sleep-screenshot analyzer.
+  useEffect(()=>{
+    if(et!=="sleep")return;
+    const onPaste=(ev)=>{
+      const items=ev.clipboardData&&ev.clipboardData.items;
+      if(!items)return;
+      for(let i=0;i<items.length;i++){
+        if(items[i].type&&items[i].type.startsWith("image/")){
+          const file=items[i].getAsFile();
+          if(file){ev.preventDefault();analyzeSleepPhotoFile(file);return}
+        }
+      }
+    };
+    window.addEventListener("paste",onPaste);
+    return ()=>window.removeEventListener("paste",onPaste);
+  },[et]);
   const [recording,setRecording]=useState(false);
   const userStoppedRef=useRef(false);
   const [aiLoading,setAiLoading]=useState(false);
@@ -567,6 +656,27 @@ function TodayTab({data,setData,supps,setSupps,takeSupplement,untakeSupplement,a
   const [voiceTranscript,setVoiceTranscript]=useState("");
   const [voiceParsing,setVoiceParsing]=useState(false);
   const [voiceError,setVoiceError]=useState("");
+  // Sleep screenshot import state (Fitbit app screenshot → vision → fields)
+  const [sleepPhotoLoading,setSleepPhotoLoading]=useState(false);
+  const [sleepPhotoError,setSleepPhotoError]=useState("");
+  const sleepPhotoRef=useRef(null);
+  const analyzeSleepPhotoFile=async(file)=>{
+    if(!file)return;
+    setSleepPhotoError("");setSleepPhotoLoading(true);
+    try{
+      const {data,media}=await fileToBase64(file);
+      const parsed=await analyzeSleepPhoto(data,media);
+      if(parsed.sl!=null)setSh(String(parsed.sl));
+      if(parsed.ss!=null)setSc(String(parsed.ss));
+      if(parsed.deep!=null)setSdeep(String(parsed.deep));
+      if(parsed.rem!=null)setSrem(String(parsed.rem));
+      if(parsed.light!=null)setSlight(String(parsed.light));
+      if(parsed.shr!=null)setSshr(String(parsed.shr));
+      if(parsed.bed)setSbed(parsed.bed);
+      if(parsed.wake)setSwake(parsed.wake);
+    }catch(e){setSleepPhotoError(e.message||"Could not read screenshot")}
+    setSleepPhotoLoading(false);
+  };
 
   // Record voice into voiceTranscript and on stop, parse via Sonnet for the given kind.
   // KEY BEHAVIOR: Press once to start, press again to stop. The browser's Web Speech API
@@ -633,6 +743,36 @@ function TodayTab({data,setData,supps,setSupps,takeSupplement,untakeSupplement,a
             if(parsed.p!=null)setBp(String(parsed.p));
             if(parsed.t)setBpt(parsed.t);
             if(parsed.rested)setBpRested(true);
+          }else if(kind==="exercise"){
+            // Merge parsed exercises into existing exRows. For each parsed
+            // exercise, find a matching row by case-insensitive name and
+            // populate its fields. If no match, append a new row.
+            if(parsed.exercises&&Array.isArray(parsed.exercises)){
+              setExRows(prev=>{
+                const rows=prev.map(r=>({...r}));
+                parsed.exercises.forEach(px=>{
+                  if(!px||!px.n)return;
+                  const targetName=String(px.n).trim().toLowerCase();
+                  let idx=rows.findIndex(r=>r.n&&r.n.trim().toLowerCase()===targetName);
+                  if(idx<0){
+                    // Loose match: "bench" matches "Bench Press"
+                    idx=rows.findIndex(r=>r.n&&(r.n.trim().toLowerCase().includes(targetName)||targetName.includes(r.n.trim().toLowerCase())));
+                  }
+                  const newVals={
+                    s:px.s!=null?String(px.s):"",
+                    r:px.r!=null?String(px.r):"",
+                    w:px.w!=null?String(px.w):"",
+                    m:px.m!=null?String(px.m):"",
+                  };
+                  if(idx>=0){
+                    rows[idx]={...rows[idx],...newVals};
+                  }else{
+                    rows.push({n:px.n,...newVals,_def:null});
+                  }
+                });
+                return rows;
+              });
+            }
           }
           setVoiceMode(null);setVoiceTranscript("");
         }catch(err){
@@ -749,7 +889,7 @@ function TodayTab({data,setData,supps,setSupps,takeSupplement,untakeSupplement,a
         React.createElement(Metric,{label:"Added Sugar",value:data.as,target:20,isMax:true,unit:"g"}),
         React.createElement(Metric,{label:"Sodium",value:data.na,target:2300,isMax:true,unit:"mg"}),
         React.createElement(Metric,{label:"Potassium",value:data.k,target:3000,unit:"mg"}),
-        React.createElement(Metric,{label:"Fat / Sat",value:data.fa,unit:`g / ${Math.round(data.sf||0)}g`})
+        React.createElement(Metric,{label:"Sat Fat",value:data.sf,target:20,isMax:true,unit:"g",sub:`total fat ${Math.round(data.fa||0)}g`})
       )
     ),
 
@@ -825,15 +965,7 @@ function TodayTab({data,setData,supps,setSupps,takeSupplement,untakeSupplement,a
           React.createElement(Inp,{label:"Pulse",value:bp,onChange:setBp,placeholder:"67",unit:"bpm"}),
           React.createElement("div",{style:{fontSize:13,color:C.dim,margin:"10px 0 6px",fontWeight:600}},"TIME"),
           React.createElement(TimePicker,{value:bpt,onChange:setBpt}),
-          // Rested toggle
-          React.createElement("div",{onClick:()=>setBpRested(!bpRested),
-            style:{marginTop:12,padding:"12px 14px",background:bpRested?C.teal+"20":C.card2,border:`1px solid ${bpRested?C.teal:C.bdr}`,borderRadius:10,cursor:"pointer",display:"flex",alignItems:"center",gap:10}},
-            React.createElement("div",{style:{width:22,height:22,borderRadius:4,border:`2px solid ${bpRested?C.teal:C.bdr}`,background:bpRested?C.teal:"transparent",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:14,fontWeight:700,flexShrink:0}},bpRested?"✓":""),
-            React.createElement("div",{style:{flex:1}},
-              React.createElement("div",{style:{fontSize:14,color:C.txt,fontWeight:600}},"Rested 5+ min before reading"),
-              React.createElement("div",{style:{fontSize:11,color:C.dim}},"Protocol: 5-min seated rest before measurement")
-            )
-          )
+          React.createElement("div",{style:{fontSize:11,color:C.dim,marginTop:8,fontStyle:"italic",textAlign:"center"}},"Tap ⊕ Rested on any logged reading to mark it rested.")
         )
       );
     })(),
@@ -843,11 +975,35 @@ function TodayTab({data,setData,supps,setSupps,takeSupplement,untakeSupplement,a
       React.createElement("div",{style:{fontSize:16,fontWeight:600,marginBottom:10}},"Log Sleep (from Fitbit)"),
       // Voice input — at the top so it can fill the fields below
       React.createElement(Btn,{onClick:()=>startVoiceCapture("sleep"),color:recording&&voiceMode==="sleep"?C.rose:C.purp,
-        style:{width:"100%",justifyContent:"center",marginBottom:10}},
+        style:{width:"100%",justifyContent:"center",marginBottom:8}},
         recording&&voiceMode==="sleep"?["⏹ Stop Recording"]:["🎤 Speak All Sleep Data"]),
+      // Fitbit screenshot import — load from gallery OR paste from clipboard
+      React.createElement("div",{style:{display:"flex",gap:6,marginBottom:10}},
+        React.createElement(Btn,{onClick:()=>sleepPhotoRef.current&&sleepPhotoRef.current.click(),color:C.blue,style:{flex:1,justifyContent:"center"}},sleepPhotoLoading?["⏳ Reading..."]:["📷 Load Fitbit Screenshot"]),
+        React.createElement(Btn,{onClick:async()=>{
+          try{
+            if(!navigator.clipboard||!navigator.clipboard.read){setSleepPhotoError("Clipboard image paste not supported in this browser. Use Load Screenshot instead.");return}
+            const items=await navigator.clipboard.read();
+            for(const item of items){
+              for(const type of item.types){
+                if(type.startsWith("image/")){
+                  const blob=await item.getType(type);
+                  analyzeSleepPhotoFile(blob);
+                  return;
+                }
+              }
+            }
+            setSleepPhotoError("No image in clipboard. Take a screenshot first.");
+          }catch(e){setSleepPhotoError("Clipboard read failed: "+e.message)}
+        },color:C.purp,outline:true,style:{flex:1,justifyContent:"center"}},["📋 Paste"])
+      ),
+      React.createElement("input",{type:"file",accept:"image/*",ref:sleepPhotoRef,style:{display:"none"},
+        onChange:e=>{const f=e.target.files&&e.target.files[0];if(f){analyzeSleepPhotoFile(f);e.target.value=""}}}),
+      sleepPhotoLoading&&React.createElement("div",{style:{marginBottom:10,padding:"10px 12px",background:C.blue+"15",borderRadius:8,fontSize:13,color:C.blue,textAlign:"center"}},"✨ Reading Fitbit screenshot..."),
+      sleepPhotoError&&React.createElement("div",{style:{marginBottom:10,padding:"10px 12px",background:C.rose+"15",borderRadius:8,fontSize:12,color:C.rose,border:`1px solid ${C.rose}40`}},"⚠️ "+sleepPhotoError),
       voiceMode==="sleep"&&recording&&React.createElement("div",{style:{marginBottom:10,padding:"10px 12px",background:C.rose+"15",borderRadius:8,fontSize:13,color:C.rose,display:"flex",alignItems:"flex-start",gap:8}},
         React.createElement("span",{style:{display:"inline-block",width:10,height:10,borderRadius:5,background:C.rose,animation:"pulse 1s infinite",flexShrink:0,marginTop:5}}),
-        React.createElement("span",{style:{flex:1,lineHeight:1.4}},voiceTranscript||"Listening... say something like \"eight hours fifteen minutes, score ninety-one, deep eighty-two, REM one fifteen, light two ninety-eight, sleeping HR sixty-one, bed ten forty five PM, wake seven AM\"")
+        React.createElement("span",{style:{flex:1,lineHeight:1.4}},voiceTranscript||"Listening... tap stop when done. E.g. \"eight hours fifteen minutes, score ninety-one, deep eighty-two, REM one fifteen, light two ninety-eight, sleeping HR sixty-one, bed ten forty five PM, wake seven AM\"")
       ),
       voiceParsing&&voiceMode==="sleep"&&React.createElement("div",{style:{marginBottom:10,padding:"10px 12px",background:C.teal+"15",borderRadius:8,fontSize:13,color:C.teal,textAlign:"center"}},"✨ Parsing sleep data..."),
       voiceError&&voiceMode==="sleep"&&React.createElement("div",{style:{marginBottom:10,padding:"10px 12px",background:C.rose+"15",borderRadius:8,fontSize:12,color:C.rose}},"⚠️ "+voiceError),
@@ -860,7 +1016,7 @@ function TodayTab({data,setData,supps,setSupps,takeSupplement,untakeSupplement,a
       React.createElement(Inp,{label:"Bed time",value:sbed,onChange:setSbed,type:"text",placeholder:"10:45 PM"}),
       React.createElement(Inp,{label:"Wake time",value:swake,onChange:setSwake,type:"text",placeholder:"7:00 AM"}),
       React.createElement("div",{style:{fontSize:12,color:C.dim,margin:"8px 0 10px",lineHeight:1.5}},"Duration is the only required field. Leave others blank if not tracking them."),
-      React.createElement(Btn,{onClick:()=>{if(sh){setData(p=>({...p,sl:+sh,ss:sc?+sc:null,deep:sdeep?+sdeep:null,rem:srem?+srem:null,light:slight?+slight:null,shr:sshr?+sshr:null,bed:sbed||null,wake:swake||null}));save("sleep",{h:+sh,sc:sc?+sc:null,deep:sdeep?+sdeep:null,rem:srem?+srem:null,light:slight?+slight:null,shr:sshr?+sshr:null,bed:sbed||null,wake:swake||null})}}},["Save"])
+      React.createElement(Btn,{onClick:()=>{if(sh){setData(p=>({...p,sl:+sh,ss:sc?+sc:null,deep:sdeep?+sdeep:null,rem:srem?+srem:null,light:slight?+slight:null,shr:sshr?+sshr:null,bed:sbed||null,wake:swake||null}));save("sleep",{h:+sh,sc:sc?+sc:null,deep:sdeep?+sdeep:null,rem:srem?+srem:null,light:slight?+slight:null,shr:sshr?+sshr:null,bed:sbed||null,wake:swake||null})}},color:C.grn,style:{width:"100%",justifyContent:"center"}},["Save"])
     ),
 
     // Stress form
@@ -936,7 +1092,17 @@ function TodayTab({data,setData,supps,setSupps,takeSupplement,untakeSupplement,a
     // Exercise form
     et==="exercise"&&React.createElement("div",{key:"f_ex",style:{background:C.card,borderRadius:12,padding:14,border:`1px solid ${C.bdr}`}},
       React.createElement("div",{style:{fontSize:16,fontWeight:600,marginBottom:6}},"Log Workout"),
-      React.createElement("div",{style:{fontSize:12,color:C.dim,marginBottom:10,lineHeight:1.4}},"Fill in whatever applies. LB = free weights / assist weight. # = machine setting number. Tap ↺ to prefill from last logged values."),
+      React.createElement("div",{style:{fontSize:12,color:C.dim,marginBottom:10,lineHeight:1.4}},"Fill in manually or tap 🎤 and describe your workout: \"three sets of ten bench at one thirty, curls thirty for four sets of eight, lat pulldown at one ten three by ten.\""),
+      // Speak Workout button
+      React.createElement(Btn,{onClick:()=>startVoiceCapture("exercise"),color:recording&&voiceMode==="exercise"?C.rose:C.purp,
+        style:{width:"100%",justifyContent:"center",marginBottom:10}},
+        recording&&voiceMode==="exercise"?["⏹ Stop Recording"]:["🎤 Speak Workout"]),
+      voiceMode==="exercise"&&recording&&React.createElement("div",{style:{marginBottom:10,padding:"10px 12px",background:C.rose+"15",borderRadius:8,fontSize:13,color:C.rose,display:"flex",alignItems:"flex-start",gap:8}},
+        React.createElement("span",{style:{display:"inline-block",width:10,height:10,borderRadius:5,background:C.rose,animation:"pulse 1s infinite",flexShrink:0,marginTop:5}}),
+        React.createElement("span",{style:{flex:1,lineHeight:1.4}},voiceTranscript||"Listening... describe your exercises. Tap stop when done.")
+      ),
+      voiceParsing&&voiceMode==="exercise"&&React.createElement("div",{style:{marginBottom:10,padding:"10px 12px",background:C.teal+"15",borderRadius:8,fontSize:13,color:C.teal,textAlign:"center"}},"✨ Parsing workout..."),
+      voiceError&&voiceMode==="exercise"&&React.createElement("div",{style:{marginBottom:10,padding:"10px 12px",background:C.rose+"15",borderRadius:8,fontSize:12,color:C.rose}},"⚠️ "+voiceError),
       React.createElement("div",{style:{display:"flex",gap:8,marginBottom:12}},
         React.createElement(Btn,{onClick:()=>{setData(p=>({...p,ex:false,exLog:[]}));save("exercise",{done:false})},outline:true,color:C.dim,style:{flex:1,justifyContent:"center",fontSize:13}},["Mark Rest Day"])
       ),
