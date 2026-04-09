@@ -465,7 +465,11 @@ function Inp({label,value,onChange,placeholder,unit,type}){
 }
 
 function Btn({children,onClick,color,outline,style:s}){
-  return React.createElement("button",{onClick,style:{background:outline?"transparent":(color||C.teal),color:outline?(color||C.teal):"#fff",border:outline?`1px solid ${color||C.teal}`:"none",borderRadius:10,padding:"14px 20px",fontSize:15,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:8,...s}},children);
+  const [flash,setFlash]=useState(false);
+  const handleClick=(e)=>{setFlash(true);setTimeout(()=>setFlash(false),200);if(onClick)onClick(e)};
+  const bg=outline?"transparent":(color||C.teal);
+  const flashBg=flash?(outline?(color||C.teal)+"25":"rgba(255,255,255,0.25)"):null;
+  return React.createElement("button",{onClick:handleClick,style:{background:flashBg||bg,color:outline?(color||C.teal):"#fff",border:outline?`1px solid ${color||C.teal}`:"none",borderRadius:10,padding:"14px 20px",fontSize:15,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:8,transition:"background 0.15s",...s}},children);
 }
 
 // ============================================================
@@ -911,8 +915,10 @@ function TodayTab({data,setData,supps,setSupps,takeSupplement,untakeSupplement,a
       },0);
       const volStr=volLoad>0?Math.round(volLoad).toLocaleString():"0";
       const btnData=[
-        ["glucose","🩸 Glucose",lastG],["bp","💓 BP",bpAvg],["sleep","😴 Sleep",sleepSc],["stress","🧠 Stress",lastSt],
-        ["weight","⚖️ Weight",lastWt],["meal","🍽️ Meal",calPct+"%"],["exercise","💪 Exercise",volStr],["alcohol","🍺 Alcohol",data.al||0]
+        ["meal","🍽️ Meal",calPct+"%"],["exercise","💪 Exercise",volStr],
+        ["glucose","🩸 Glucose",lastG],["bp","💓 BP",bpAvg],
+        ["sleep","😴 Sleep",sleepSc],["stress","🧠 Stress",lastSt],
+        ["weight","⚖️ Weight",lastWt],["alcohol","🍺 Alcohol",data.al||0]
       ];
       return React.createElement("div",{key:"btns"},
         React.createElement("div",{style:{fontSize:15,fontWeight:600,color:C.dim,marginBottom:8}},"LOG AND SHOW DAILY DATA"),
@@ -1074,7 +1080,9 @@ function TodayTab({data,setData,supps,setSupps,takeSupplement,untakeSupplement,a
       ),
       voiceParsing&&voiceMode==="sleep"&&React.createElement("div",{style:{marginBottom:10,padding:"10px 12px",background:C.teal+"15",borderRadius:8,fontSize:13,color:C.teal,textAlign:"center"}},"✨ Parsing sleep data..."),
       voiceError&&voiceMode==="sleep"&&React.createElement("div",{style:{marginBottom:10,padding:"10px 12px",background:C.rose+"15",borderRadius:8,fontSize:12,color:C.rose}},"⚠️ "+voiceError),
-      React.createElement(Inp,{label:"Duration",value:sh,onChange:setSh,placeholder:"8.25",unit:"hrs"}),
+      React.createElement("div",{style:{fontSize:12,color:C.amber,fontWeight:600,marginBottom:2,marginTop:4}},"REQUIRED"),
+      React.createElement(Inp,{label:"Duration *",value:sh,onChange:setSh,placeholder:"8.25",unit:"hrs"}),
+      React.createElement("div",{style:{fontSize:12,color:C.dim,fontWeight:600,marginBottom:2,marginTop:8}},"OPTIONAL"),
       React.createElement(Inp,{label:"Score",value:sc,onChange:setSc,placeholder:"91"}),
       React.createElement(Inp,{label:"Deep",value:sdeep,onChange:setSdeep,placeholder:"82",unit:"min"}),
       React.createElement(Inp,{label:"REM",value:srem,onChange:setSrem,placeholder:"115",unit:"min"}),
@@ -1082,7 +1090,6 @@ function TodayTab({data,setData,supps,setSupps,takeSupplement,untakeSupplement,a
       React.createElement(Inp,{label:"Sleeping HR",value:sshr,onChange:setSshr,placeholder:"61",unit:"bpm"}),
       React.createElement(Inp,{label:"Bed time",value:sbed,onChange:setSbed,type:"text",placeholder:"10:45 PM"}),
       React.createElement(Inp,{label:"Wake time",value:swake,onChange:setSwake,type:"text",placeholder:"7:00 AM"}),
-      React.createElement("div",{style:{fontSize:12,color:C.dim,margin:"8px 0 10px",lineHeight:1.5}},"Duration is the only required field. Leave others blank if not tracking them."),
       React.createElement(Btn,{onClick:()=>{if(sh){setData(p=>({...p,sl:+sh,ss:sc?+sc:null,deep:sdeep?+sdeep:null,rem:srem?+srem:null,light:slight?+slight:null,shr:sshr?+sshr:null,bed:sbed||null,wake:swake||null}));save("sleep",{h:+sh,sc:sc?+sc:null,deep:sdeep?+sdeep:null,rem:srem?+srem:null,light:slight?+slight:null,shr:sshr?+sshr:null,bed:sbed||null,wake:swake||null})}},color:C.grn,style:{width:"100%",justifyContent:"center"}},["Save"])
     ),
 
@@ -1852,12 +1859,14 @@ function SettingsTab({history,setHistory}){
       React.createElement("div",{style:{fontSize:13,color:C.dim,marginBottom:10,lineHeight:1.5}},'Paste JSON with any of: {"history":[...], "profile":"...", "foodref":"..."}. The foodref is a markdown/text blob describing your known products — it powers AI meal analysis.'),
       !showImport&&React.createElement(Btn,{onClick:()=>setShowImport(true),color:C.teal},["📥 Import Data"]),
       showImport&&React.createElement("div",null,
+        React.createElement("div",{style:{display:"flex",gap:8,marginBottom:8}},
+          React.createElement(Btn,{onClick:()=>{const inp=document.createElement("input");inp.type="file";inp.accept=".json,application/json";inp.onchange=(ev)=>{const f=ev.target.files&&ev.target.files[0];if(!f)return;const reader=new FileReader();reader.onload=()=>{setImportText(reader.result)};reader.onerror=()=>setStatus("❌ Could not read file");reader.readAsText(f)};inp.click()},color:C.blue,style:{flex:1,justifyContent:"center"}},["📂 Load .json File"]),
+          React.createElement(Btn,{onClick:()=>{setShowImport(false);setImportText("")},outline:true,color:C.dim},["Cancel"])
+        ),
+        React.createElement("div",{style:{fontSize:12,color:C.dim,marginBottom:6,textAlign:"center"}},"— or paste JSON below —"),
         React.createElement("textarea",{value:importText,onChange:e=>setImportText(e.target.value),placeholder:'Paste JSON here...',rows:6,
           style:{width:"100%",background:C.card2,border:`1px solid ${C.bdr}`,borderRadius:8,padding:10,color:C.txt,fontSize:14,resize:"vertical",outline:"none",boxSizing:"border-box",fontFamily:"monospace",marginBottom:8}}),
-        React.createElement("div",{style:{display:"flex",gap:8}},
-          React.createElement(Btn,{onClick:doImport,color:C.grn},["Import"]),
-          React.createElement(Btn,{onClick:()=>{setShowImport(false);setImportText("")},outline:true,color:C.dim},["Cancel"])
-        )
+        importText&&React.createElement(Btn,{onClick:doImport,color:C.grn,style:{width:"100%",justifyContent:"center"}},["Import"])
       )
     ),
 
