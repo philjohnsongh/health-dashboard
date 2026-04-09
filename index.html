@@ -440,15 +440,14 @@ function Metric({label,value,unit,target,isMax,color,sub}){
 }
 
 function SuppCard({s,done,onTap,expanded}){
-  return React.createElement("div",{onClick:onTap,style:{background:done?C.card2:(expanded?C.amber+"15":C.card),borderRadius:14,padding:"16px 16px",border:`${expanded?2:1}px solid ${done?C.grn+"60":(expanded?C.amber:C.bdr)}`,cursor:"pointer",opacity:done?0.65:1,display:"flex",flexDirection:"column",gap:8}},
-    React.createElement("div",{style:{display:"flex",alignItems:"center",gap:12}},
-      React.createElement("div",{style:{width:36,height:36,borderRadius:18,background:done?C.grn:C.card2,display:"flex",alignItems:"center",justifyContent:"center",fontSize:done?18:20,flexShrink:0,color:done?"#fff":undefined}},done?"✓":s.icon),
-      React.createElement("div",{style:{flex:1,minWidth:0}},
-        React.createElement("div",{style:{fontSize:15,fontWeight:600,color:done?C.dim:C.txt}},s.name),
-        React.createElement("div",{style:{fontSize:13,color:C.dim}},s.time)
-      )
+  return React.createElement("div",{onClick:onTap,style:{background:done?C.card2:(expanded?C.amber+"15":C.card),borderRadius:14,padding:"12px 14px",border:`${expanded?2:1}px solid ${done?C.grn+"60":(expanded?C.amber:C.bdr)}`,cursor:"pointer",opacity:done?0.65:1,display:"flex",flexDirection:"column"}},
+    React.createElement("div",{style:{fontSize:17,fontWeight:600,color:done?C.dim:C.txt,marginBottom:4,display:"flex",alignItems:"center",gap:6}},
+      React.createElement("span",{style:{fontSize:18}},done?"✓":s.icon),
+      s.name
     ),
-    expanded&&React.createElement("div",{style:{paddingTop:8,borderTop:`1px solid ${C.amber}40`,fontSize:14,color:C.txt,lineHeight:1.5}},
+    React.createElement("div",{style:{fontSize:26,fontWeight:700,fontFamily:"monospace",color:done?C.grn:C.amber}},s.time),
+    React.createElement("div",{style:{height:4,width:"100%",background:done?C.grn+"40":C.card2,borderRadius:2,marginTop:6}}),
+    expanded&&React.createElement("div",{style:{paddingTop:8,marginTop:8,borderTop:`1px solid ${C.amber}40`,fontSize:14,color:C.txt,lineHeight:1.5}},
       React.createElement("div",{style:{fontSize:11,color:C.amber,fontWeight:700,marginBottom:4}},"INCLUDES"),
       React.createElement("div",null,s.items),
       React.createElement("div",{style:{marginTop:8,fontSize:12,color:C.amber,fontWeight:600,textAlign:"center"}},"Tap again to mark taken ✓")
