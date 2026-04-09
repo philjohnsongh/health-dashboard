@@ -445,7 +445,7 @@ function SuppCard({s,done,onTap,expanded}){
       React.createElement("span",{style:{fontSize:15}},done?"✓":s.icon),
       s.name
     ),
-    React.createElement("div",{style:{fontSize:26,fontWeight:700,fontFamily:"monospace",color:done?C.grn:C.amber,lineHeight:1.2}},s.time),
+    React.createElement("div",{style:{fontSize:14,color:done?C.dim:C.amber,lineHeight:1.2}},s.time),
     React.createElement("div",{style:{height:4,width:"100%",background:done?C.grn+"40":C.card2,borderRadius:2,marginTop:6}}),
     expanded&&React.createElement("div",{style:{paddingTop:8,marginTop:8,borderTop:`1px solid ${C.amber}40`,fontSize:14,color:C.txt,lineHeight:1.5}},
       React.createElement("div",{style:{fontSize:11,color:C.amber,fontWeight:700,marginBottom:4}},"INCLUDES"),
