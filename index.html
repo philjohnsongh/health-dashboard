@@ -890,28 +890,57 @@ function TodayTab({data,setData,supps,setSupps,takeSupplement,untakeSupplement,a
     ),
 
     // Entry buttons (above totals so they're prominent at the top)
-    React.createElement("div",{key:"btns"},
-      React.createElement("div",{style:{fontSize:15,fontWeight:600,color:C.dim,marginBottom:8}},"LOG AND SHOW DAILY DATA"),
-      React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}},
-        [["glucose","🩸 Glucose"],["bp","💓 BP"],["sleep","😴 Sleep"],["stress","🧠 Stress"],["weight","⚖️ Weight"],["meal","🍽️ Meal"],["exercise","💪 Exercise"],["alcohol","🍺 Alcohol"]].map(([k,l])=>
-          React.createElement("button",{key:k,onClick:()=>setEt(et===k?null:k),style:{background:et===k?C.teal:C.card,color:et===k?"#fff":C.txt,border:`1.5px solid ${et===k?C.teal:C.bdr}`,borderRadius:14,padding:"18px 16px",fontSize:18,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:4}},l)
+    // Compute live summary values for each button
+    (()=>{
+      const lastG=data.gReadings&&data.gReadings.length>0?data.gReadings[data.gReadings.length-1].v:0;
+      const bpAvg=(()=>{const rs=(data.bpReadings||[]).filter(r=>r.avg);if(rs.length===0)return "0";const s=Math.round(rs.reduce((a,r)=>a+r.s,0)/rs.length);const d=Math.round(rs.reduce((a,r)=>a+r.d,0)/rs.length);return s+"/"+d})();
+      const lastSt=data.stReadings&&data.stReadings.length>0?data.stReadings[data.stReadings.length-1].v:0;
+      const lastWt=data.wtReadings&&data.wtReadings.length>0?data.wtReadings[data.wtReadings.length-1].v:0;
+      const sleepSc=data.ss!=null?data.ss:0;
+      const calPct=calT>0?Math.round((data.cal||0)/calT*100):0;
+      // Volume load: sets*reps*effective_weight. Machine setting → BW*0.1*setting*0.55 (BW~189).
+      // Bodyweight exercises use load factors. Default reps=10 if blank.
+      const BW=data.wt||189;
+      const bwFactors={"squats":0.7,"squat":0.7,"push-ups":0.65,"push-up":0.65,"pushup":0.65,"pushups":0.65,"sit-ups":0.3,"sit-up":0.3,"situp":0.3,"situps":0.3,"crunches":0.3,"crunch":0.3,"calf raises":0.9,"calf raise":0.9,"chin-ups":1.0,"chin-up":1.0,"chinup":1.0,"chinups":1.0,"pull-ups":1.0,"pull-up":1.0,"pullup":1.0,"pullups":1.0};
+      const volLoad=(data.exLog||[]).reduce((tot,e)=>{
+        const sets=parseFloat(e.s)||1;const reps=parseFloat(e.r)||10;
+        let w=0;
+        if(e.m&&parseFloat(e.m)>0){w=BW*0.1*parseFloat(e.m)*0.55}
+        else if(e.w&&parseFloat(e.w)>0){w=parseFloat(e.w)}
+        else{const nm=(e.n||"").toLowerCase();const f=Object.keys(bwFactors).find(k=>nm.includes(k));if(f)w=BW*bwFactors[f]}
+        return tot+sets*reps*w;
+      },0);
+      const volStr=volLoad>0?Math.round(volLoad).toLocaleString():"0";
+      const btnData=[
+        ["glucose","🩸 Glucose",lastG],["bp","💓 BP",bpAvg],["sleep","😴 Sleep",sleepSc],["stress","🧠 Stress",lastSt],
+        ["weight","⚖️ Weight",lastWt],["meal","🍽️ Meal",calPct+"%"],["exercise","💪 Exercise",volStr],["alcohol","🍺 Alcohol",data.al||0]
+      ];
+      return React.createElement("div",{key:"btns"},
+        React.createElement("div",{style:{fontSize:15,fontWeight:600,color:C.dim,marginBottom:8}},"LOG AND SHOW DAILY DATA"),
+        React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}},
+          btnData.map(([k,l,v])=>
+            React.createElement("button",{key:k,onClick:()=>setEt(et===k?null:k),style:{background:et===k?C.teal:C.card,color:et===k?"#fff":C.txt,border:`1px solid ${et===k?C.teal:C.bdr}`,borderRadius:14,padding:"12px 14px",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between"}},
+              React.createElement("span",{style:{fontSize:17,fontWeight:600}},l),
+              React.createElement("span",{style:{fontSize:14,fontWeight:700,fontFamily:"monospace",color:et===k?"#fff":C.teal,opacity:et===k?0.9:0.85}},v)
+            )
+          )
         )
-      )
-    ),
+      );
+    })(),
 
-    // Daily totals — 12 tiles in a 2-column grid. Pairings: Cal/Protein,
-    // EffProt/Carbs, Fiber/AddSugar, TotSugar/SatFat, Sodium/Potassium,
-    // Calcium/Fluids.
+    // Daily totals — 12 tiles in a 2-column grid.
+    // Row order: Cal/Carbs, EffProt/RawProt, AddSugar/TotSugar,
+    // Fiber/SatFat, Sodium/Potassium, Calcium/Fluids.
     React.createElement("div",{key:"totals"},
       React.createElement("div",{style:{fontSize:15,fontWeight:600,color:C.dim,marginBottom:6}},"TODAY'S TOTALS"),
       React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}},
         React.createElement(Metric,{label:"Calories",value:data.cal,target:calT}),
-        React.createElement(Metric,{label:"Protein (raw)",value:data.p,target:110,unit:"g"}),
-        React.createElement(Metric,{label:"Protein (eff)",value:data.ep,target:100,unit:"g"}),
         React.createElement(Metric,{label:"Carbs",value:data.ca,target:100,unit:"g"}),
-        React.createElement(Metric,{label:"Fiber",value:data.fi,target:28,unit:"g"}),
+        React.createElement(Metric,{label:"Protein (eff)",value:data.ep,target:100,unit:"g"}),
+        React.createElement(Metric,{label:"Protein (raw)",value:data.p,target:110,unit:"g"}),
         React.createElement(Metric,{label:"Added Sugar",value:data.as,target:20,isMax:true,unit:"g"}),
         React.createElement(Metric,{label:"Total Sugar",value:data.su,target:60,isMax:true,unit:"g"}),
+        React.createElement(Metric,{label:"Fiber",value:data.fi,target:28,unit:"g"}),
         React.createElement(Metric,{label:"Sat Fat",value:data.sf,target:20,isMax:true,unit:"g",sub:`total fat ${Math.round(data.fa||0)}g`}),
         React.createElement(Metric,{label:"Sodium",value:data.na,target:2300,isMax:true,unit:"mg"}),
         React.createElement(Metric,{label:"Potassium",value:data.k,target:3000,unit:"mg"}),
