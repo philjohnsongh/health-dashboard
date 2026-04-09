@@ -421,18 +421,20 @@ Parsing rules:
 // SMALL COMPONENTS
 // ============================================================
 function Metric({label,value,unit,target,isMax,color,sub}){
-  const over=isMax&&value>target;const under=!isMax&&target&&value<target;
-  const c=over?C.rose:under?C.amber:color||C.teal;
+  const over=isMax&&value>target;
+  const c=over?C.rose:color||C.teal;
   const pct=target?Math.min((value/target)*100,110):null;
-  return React.createElement("div",{style:{background:C.card,borderRadius:14,padding:"16px 16px",borderLeft:`4px solid ${c}`}},
-    React.createElement("div",{style:{fontSize:17,color:C.txt,marginBottom:6,fontWeight:600,letterSpacing:0.2}},label),
+  return React.createElement("div",{style:{background:C.card,borderRadius:14,padding:"12px 14px",border:`1px solid ${C.bdr}`}},
+    React.createElement("div",{style:{display:"flex",alignItems:"baseline",gap:6,marginBottom:4}},
+      React.createElement("span",{style:{fontSize:17,color:C.txt,fontWeight:600,letterSpacing:0.2}},label),
+      sub&&React.createElement("span",{style:{fontSize:12,color:C.dim,fontFamily:"monospace"}},sub)
+    ),
     React.createElement("div",{style:{display:"flex",alignItems:"baseline",gap:6}},
-      React.createElement("span",{style:{fontSize:34,fontWeight:700,color:c,fontFamily:"monospace"}},value!=null?Math.round(value):"—"),
-      unit&&React.createElement("span",{style:{fontSize:15,color:C.txt,opacity:0.8}},unit),
+      React.createElement("span",{style:{fontSize:26,fontWeight:700,color:c,fontFamily:"monospace"}},value!=null?Math.round(value):"—"),
+      unit&&React.createElement("span",{style:{fontSize:14,color:C.txt,opacity:0.8}},unit),
       target&&React.createElement("span",{style:{fontSize:16,color:C.txt,marginLeft:"auto",opacity:0.78,fontWeight:600}},`/ ${target}${isMax?" max":""}`)
     ),
-    sub&&React.createElement("div",{style:{fontSize:12,color:C.dim,marginTop:4,fontFamily:"monospace"}},sub),
-    pct!=null&&React.createElement("div",{style:{height:4,background:C.card2,borderRadius:2,marginTop:8}},
+    pct!=null&&React.createElement("div",{style:{height:4,background:C.card2,borderRadius:2,marginTop:6}},
       React.createElement("div",{style:{height:4,background:c,borderRadius:2,width:`${Math.min(pct,100)}%`,transition:"width 0.5s"}}))
   );
 }
@@ -892,7 +894,7 @@ function TodayTab({data,setData,supps,setSupps,takeSupplement,untakeSupplement,a
       React.createElement("div",{style:{fontSize:15,fontWeight:600,color:C.dim,marginBottom:8}},"LOG AND SHOW DAILY DATA"),
       React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}},
         [["glucose","🩸 Glucose"],["bp","💓 BP"],["sleep","😴 Sleep"],["stress","🧠 Stress"],["weight","⚖️ Weight"],["meal","🍽️ Meal"],["exercise","💪 Exercise"],["alcohol","🍺 Alcohol"]].map(([k,l])=>
-          React.createElement("button",{key:k,onClick:()=>setEt(et===k?null:k),style:{background:et===k?C.teal:C.card,color:et===k?"#fff":C.txt,border:`1.5px solid ${et===k?C.teal:C.bdr}`,borderRadius:14,padding:"16px 16px",fontSize:18,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:4}},l)
+          React.createElement("button",{key:k,onClick:()=>setEt(et===k?null:k),style:{background:et===k?C.teal:C.card,color:et===k?"#fff":C.txt,border:`1.5px solid ${et===k?C.teal:C.bdr}`,borderRadius:14,padding:"18px 16px",fontSize:18,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:4}},l)
         )
       )
     ),
