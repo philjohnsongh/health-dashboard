@@ -609,7 +609,7 @@ function AIMealPreview({items,notes,onConfirm,onCancel}){
 // ============================================================
 // TODAY TAB
 // ============================================================
-function TodayTab({data,setData,supps,setSupps,takeSupplement,untakeSupplement,addMeal,addReading,history,et,setEt}){
+function TodayTab({data,setData,supps,setSupps,takeSupplement,untakeSupplement,addMeal,addMealToDate,addReading,history,et,setEt}){
   const [gv,setGv]=useState("");const [gt,setGt]=useState("");
   const [bs,setBs]=useState("");const [bd,setBd]=useState("");const [bp,setBp]=useState("");const [bpt,setBpt]=useState("");const [bpRested,setBpRested]=useState(false);
   const [sh,setSh]=useState("");const [sc,setSc]=useState("");
@@ -617,7 +617,33 @@ function TodayTab({data,setData,supps,setSupps,takeSupplement,untakeSupplement,a
   const [sshr,setSshr]=useState("");const [sbed,setSbed]=useState("");const [swake,setSwake]=useState("");
   const [wv,setWv]=useState("");const [mt,setMt]=useState("");
   const [sq,setSq]=useState(false);const [av,setAv]=useState("");
+  const [mealDate,setMealDate]=useState(todayStr());
+  const [mealToast,setMealToast]=useState("");
   const [exRows,setExRows]=useState(ALL_EXERCISES.map(n=>({n,s:"",r:"",w:"",m:"",_def:null})));
+
+  // Reset the meal date to today each time the Meal sub-view opens, so backdating
+  // is an explicit per-session choice rather than a sticky setting.
+  useEffect(()=>{if(et==="meal"){setMealDate(todayStr());setMealToast("")}},[et]);
+
+  // Auto-clear the meal toast after 2.5 seconds.
+  useEffect(()=>{
+    if(!mealToast)return;
+    const t=setTimeout(()=>setMealToast(""),2500);
+    return ()=>clearTimeout(t);
+  },[mealToast]);
+
+  // Route a meal log through either addMeal (today) or addMealToDate (past day)
+  // depending on the current mealDate picker value. Only shows a toast for
+  // backdated logs — same-day logs are already reflected in Today's Totals.
+  const logMeal=(m)=>{
+    if(mealDate===todayStr()){addMeal(m);return}
+    if(addMealToDate){
+      addMealToDate(mealDate,m);
+      const d=new Date(mealDate+"T00:00:00");
+      const label=d.toLocaleDateString("en-US",{month:"short",day:"numeric"});
+      setMealToast(`✓ Logged to ${label}`);
+    }
+  };
 
   // When the exercise form opens, rebuild rows from master list + any custom exercises
   // previously saved in ex_defaults, attaching each row's _def so prefill + placeholders work.
@@ -824,7 +850,7 @@ function TodayTab({data,setData,supps,setSupps,takeSupplement,untakeSupplement,a
     }catch(e){setAiError(e.message)}
   };
   const confirmAI=(rows)=>{
-    rows.forEach(r=>addMeal(r));
+    rows.forEach(r=>logMeal(r));
     setAiPreview(null);setMt("");setAiError("");
   };
 
@@ -1214,10 +1240,29 @@ function TodayTab({data,setData,supps,setSupps,takeSupplement,untakeSupplement,a
 
     // Meal entry
     et==="meal"&&React.createElement("div",{key:"f_meal",style:{background:C.card,borderRadius:12,padding:14,border:`1px solid ${C.bdr}`}},
-      React.createElement("div",{style:{fontSize:16,fontWeight:600,marginBottom:10}},"Log Meal"),
+      mealToast&&React.createElement("div",{style:{background:C.grn+"20",border:`1px solid ${C.grn}60`,borderRadius:8,padding:"10px 12px",marginBottom:10,fontSize:15,color:C.grn,fontWeight:700,textAlign:"center",transition:"opacity 0.3s"}},mealToast),
+      React.createElement("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:10}},
+        React.createElement("div",{style:{fontSize:16,fontWeight:600}},"Log Meal"),
+        React.createElement("div",{style:{display:"flex",alignItems:"center",gap:6}},
+          React.createElement("span",{style:{fontSize:13,color:C.dim}},"For:"),
+          React.createElement("input",{type:"date",value:mealDate,max:todayStr(),onChange:e=>setMealDate(e.target.value||todayStr()),
+            style:{background:C.card2,border:`1px solid ${mealDate===todayStr()?C.bdr:C.amber}`,borderRadius:6,padding:"6px 8px",color:mealDate===todayStr()?C.txt:C.amber,fontSize:13,fontFamily:"inherit",outline:"none",colorScheme:"dark"}})
+        )
+      ),
+      mealDate!==todayStr()&&(()=>{
+        const d=new Date(mealDate+"T00:00:00");
+        const today=new Date(todayStr()+"T00:00:00");
+        const days=Math.round((today-d)/86400000);
+        const label=d.toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"});
+        return React.createElement("div",{style:{background:C.amber+"15",border:`1px solid ${C.amber}40`,borderRadius:8,padding:"8px 10px",marginBottom:10,fontSize:13,color:C.amber,display:"flex",alignItems:"center",gap:8}},
+          React.createElement("span",null,"⚠️"),
+          React.createElement("span",null,`Backdating to ${label} (${days} day${days===1?"":"s"} ago)`),
+          React.createElement("button",{onClick:()=>setMealDate(todayStr()),style:{marginLeft:"auto",background:"transparent",border:`1px solid ${C.amber}`,borderRadius:6,padding:"4px 10px",color:C.amber,fontSize:12,cursor:"pointer",fontWeight:600}},"Today")
+        );
+      })(),
       React.createElement("button",{onClick:()=>setSq(!sq),style:{background:C.card2,border:`1px solid ${C.bdr}`,borderRadius:8,padding:"12px 14px",color:C.teal,fontSize:14,cursor:"pointer",width:"100%",textAlign:"left",marginBottom:8}},`⚡ Quick-Pick Items ${sq?"▲":"▼"}`),
       sq&&React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:4,marginBottom:10,maxHeight:200,overflowY:"auto"}},
-        QMEALS.map(m=>React.createElement("button",{key:m.id,onClick:()=>{addMeal(m);setSq(false)},
+        QMEALS.map(m=>React.createElement("button",{key:m.id,onClick:()=>{logMeal(m);setSq(false)},
           style:{background:C.bg,border:`1px solid ${C.bdr}`,borderRadius:8,padding:"14px 16px",color:C.txt,fontSize:16,cursor:"pointer",textAlign:"left",display:"flex",justifyContent:"space-between"}},
           React.createElement("span",null,m.n),React.createElement("span",{style:{color:C.dim}},`${m.cal}cal/${m.p}g`)
         ))
@@ -1540,6 +1585,188 @@ function TrendsTab({history}){
       charts.map(function(c){return React.createElement("button",{key:c.id,onClick:function(){setCh(c.id)},style:{background:ch===c.id?C.teal:C.card,color:ch===c.id?"#fff":C.dim,border:"1px solid "+(ch===c.id?C.teal:C.bdr),borderRadius:16,padding:"6px 12px",fontSize:11,cursor:"pointer",fontWeight:500}},c.l)})
     ),
     React.createElement("div",{style:{background:C.card,borderRadius:12,padding:"12px 8px 12px 0",border:"1px solid "+C.bdr,height:280}},chart)
+  );
+}
+
+// ============================================================
+// HISTORY TAB — last 7 days of readable activity log
+// ============================================================
+// Shows today + last 6 history entries as a scrollable per-day log
+// with sub-sections for Meals, Sleep, Glucose, BP, Exercise, Stress.
+// Gracefully handles two shapes of history entries:
+//   - New-style entries with full arrays (meals[], gReadings[], bpReadings[], exLog[], stReadings[])
+//   - Old-style summary-only entries from imported JSON (scalar cal/p/g/bs/bd/pu/ex/st)
+function HistoryTab({data,history}){
+  const e=React.createElement;
+  const today=todayStr();
+
+  // Build list of days: today (from live td) + last 6 from history (excluding today if duplicated)
+  const days=[];
+  days.push({d:today,...data});
+  const past=(history||[])
+    .filter(h=>h&&h.d&&h.d!==today)
+    .sort((a,b)=>b.d.localeCompare(a.d))
+    .slice(0,6);
+  days.push(...past);
+
+  // Format a YYYY-MM-DD date as "Today" / "Yesterday" / "Tue, Apr 7"
+  const fmtDate=(d)=>{
+    if(d===today)return"Today";
+    const dt=new Date(d+"T00:00:00");
+    const t=new Date(today+"T00:00:00");
+    const diff=Math.round((t-dt)/86400000);
+    if(diff===1)return"Yesterday";
+    return dt.toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"});
+  };
+
+  // Format an ISO timestamp or "h:mm AM" string into a short time label
+  const fmtTime=(t)=>{
+    if(!t)return"";
+    if(typeof t==="string"&&t.includes("M"))return t; // already human-readable like "9:30 AM"
+    try{return new Date(t).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"})}catch{return""}
+  };
+
+  const sectionHeader=(icon,label)=>e("div",{style:{fontSize:11,color:C.dim,fontWeight:700,letterSpacing:0.5,marginTop:10,marginBottom:3,textTransform:"uppercase"}},`${icon} ${label}`);
+
+  const renderDay=(entry)=>{
+    const blocks=[];
+
+    // ── Meals ─────────────────────────────────
+    const meals=entry.meals||[];
+    if(meals.length>0){
+      blocks.push(sectionHeader("🍽️",`Meals (${meals.length})`));
+      meals.forEach((m,i)=>{
+        const time=fmtTime(m.t);
+        blocks.push(e("div",{key:`m${i}`,style:{fontSize:14,color:C.txt,lineHeight:1.5,padding:"2px 0",display:"flex",gap:8,alignItems:"baseline"}},
+          time&&e("span",{style:{color:C.dim,fontFamily:"monospace",fontSize:11,flexShrink:0,minWidth:60}},time),
+          e("span",{style:{flex:1}},m.n||"Meal"),
+          e("span",{style:{color:C.dim,fontSize:12,flexShrink:0}},`${Math.round(m.cal||0)}cal`)
+        ));
+      });
+    }else if(entry.cal){
+      blocks.push(sectionHeader("🍽️","Daily Totals"));
+      blocks.push(e("div",{key:"mtot",style:{fontSize:13,color:C.txt,lineHeight:1.5,padding:"2px 0"}},
+        `${Math.round(entry.cal)} cal · ${Math.round(entry.p||0)}g prot · ${Math.round(entry.ca||0)}g carb · ${Math.round(entry.fi||0)}g fib · Na ${Math.round(entry.na||0)}`
+      ));
+    }
+
+    // ── Sleep ─────────────────────────────────
+    if(entry.sl!=null||entry.ss!=null||entry.deep!=null){
+      blocks.push(sectionHeader("😴","Sleep"));
+      const main=[];
+      if(entry.sl){
+        const h=Math.floor(entry.sl);
+        const mins=Math.round((entry.sl-h)*60);
+        main.push(`${h}h${mins?" "+mins+"m":""}`);
+      }
+      if(entry.ss)main.push(`score ${entry.ss}`);
+      blocks.push(e("div",{key:"sl",style:{fontSize:14,color:C.txt,lineHeight:1.5,padding:"2px 0"}},main.join(" · ")||"—"));
+      const stages=[];
+      if(entry.deep)stages.push(`Deep ${entry.deep}m`);
+      if(entry.rem)stages.push(`REM ${entry.rem}m`);
+      if(entry.light)stages.push(`Light ${entry.light}m`);
+      if(entry.shr)stages.push(`HR ${entry.shr}`);
+      if(stages.length>0){
+        blocks.push(e("div",{key:"slst",style:{fontSize:12,color:C.dim,lineHeight:1.5,padding:"2px 0"}},stages.join(" · ")));
+      }
+    }
+
+    // ── Glucose ───────────────────────────────
+    const gReadings=entry.gReadings||[];
+    if(gReadings.length>0){
+      blocks.push(sectionHeader("🩸",`Glucose (${gReadings.length})`));
+      gReadings.forEach((r,i)=>{
+        blocks.push(e("div",{key:`g${i}`,style:{fontSize:14,color:C.txt,lineHeight:1.5,padding:"2px 0",display:"flex",gap:8,alignItems:"baseline"}},
+          r.t&&e("span",{style:{color:C.dim,fontFamily:"monospace",fontSize:11,minWidth:60}},fmtTime(r.t)),
+          e("span",{style:{fontWeight:600}},r.v)
+        ));
+      });
+    }else if(entry.g!=null){
+      blocks.push(sectionHeader("🩸","Glucose"));
+      blocks.push(e("div",{key:"g0",style:{fontSize:14,color:C.txt,padding:"2px 0"}},`${entry.g} (fasting)`));
+    }
+
+    // ── Blood Pressure ────────────────────────
+    const bpReadings=entry.bpReadings||[];
+    if(bpReadings.length>0){
+      blocks.push(sectionHeader("💓",`Blood Pressure (${bpReadings.length})`));
+      bpReadings.forEach((r,i)=>{
+        blocks.push(e("div",{key:`bp${i}`,style:{fontSize:14,color:C.txt,lineHeight:1.5,padding:"2px 0",display:"flex",gap:8,alignItems:"baseline"}},
+          r.t&&e("span",{style:{color:C.dim,fontFamily:"monospace",fontSize:11,minWidth:60}},fmtTime(r.t)),
+          e("span",{style:{fontWeight:600}},`${r.s}/${r.d}`),
+          r.p&&e("span",{style:{color:C.dim,fontSize:12}},`pulse ${r.p}`),
+          r.avg&&e("span",{style:{color:C.teal,fontSize:11}},"✓avg")
+        ));
+      });
+    }else if(entry.bs!=null){
+      blocks.push(sectionHeader("💓","Blood Pressure"));
+      blocks.push(e("div",{key:"bp0",style:{fontSize:14,color:C.txt,padding:"2px 0"}},
+        `${entry.bs}/${entry.bd||"—"}${entry.pu?` · pulse ${entry.pu}`:""}`));
+    }
+
+    // ── Exercise ──────────────────────────────
+    const exLog=entry.exLog||[];
+    if(exLog.length>0){
+      blocks.push(sectionHeader("💪",`Exercise (${exLog.length})`));
+      exLog.forEach((x,i)=>{
+        const parts=[];
+        if(x.s&&x.r)parts.push(`${x.s}×${x.r}`);
+        else if(x.s)parts.push(`${x.s} sets`);
+        else if(x.r)parts.push(`${x.r} reps`);
+        if(x.w)parts.push(`@${x.w}`);
+        if(x.m)parts.push(`set ${x.m}`);
+        blocks.push(e("div",{key:`ex${i}`,style:{fontSize:14,color:C.txt,lineHeight:1.5,padding:"2px 0",display:"flex",gap:8,alignItems:"baseline"}},
+          e("span",{style:{flex:1}},x.n||"Exercise"),
+          parts.length>0&&e("span",{style:{color:C.dim,fontSize:12}},parts.join(" "))
+        ));
+      });
+      if(entry.vl)blocks.push(e("div",{key:"exvl",style:{fontSize:12,color:C.dim,padding:"2px 0",fontStyle:"italic"}},`Volume load: ${Math.round(entry.vl).toLocaleString()} lb`));
+    }else if(entry.ex||entry.vl||entry.ws){
+      blocks.push(sectionHeader("💪","Exercise"));
+      const parts=[];
+      if(entry.ws)parts.push(`${entry.ws} sets`);
+      if(entry.vl)parts.push(`${Math.round(entry.vl).toLocaleString()} lb volume`);
+      blocks.push(e("div",{key:"ex0",style:{fontSize:13,color:parts.length?C.txt:C.dim,padding:"2px 0"}},parts.join(" · ")||"Yes (no details)"));
+    }
+
+    // ── Stress ────────────────────────────────
+    const stReadings=entry.stReadings||[];
+    if(stReadings.length>0){
+      blocks.push(sectionHeader("🧠",`Stress (${stReadings.length})`));
+      stReadings.forEach((r,i)=>{
+        blocks.push(e("div",{key:`st${i}`,style:{fontSize:14,color:C.txt,lineHeight:1.5,padding:"2px 0",display:"flex",gap:8,alignItems:"baseline"}},
+          r.ts&&e("span",{style:{color:C.dim,fontFamily:"monospace",fontSize:11,minWidth:60}},fmtTime(r.ts)),
+          e("span",{style:{fontWeight:600}},r.v)
+        ));
+      });
+    }else if(entry.st!=null&&typeof entry.st==="number"&&entry.st<=10){
+      // Guard: `st` is also used for Steps (Fitbit) when larger. Stress is 1-6.
+      blocks.push(sectionHeader("🧠","Stress"));
+      blocks.push(e("div",{key:"st0",style:{fontSize:14,color:C.txt,padding:"2px 0"}},entry.st));
+    }
+
+    // ── Notes (if present) ────────────────────
+    if(entry.nt){
+      blocks.push(sectionHeader("📝","Notes"));
+      blocks.push(e("div",{key:"nt",style:{fontSize:13,color:C.txt,lineHeight:1.5,padding:"2px 0",fontStyle:"italic"}},entry.nt));
+    }
+
+    if(blocks.length===0){
+      blocks.push(e("div",{key:"empty",style:{fontSize:13,color:C.dim,fontStyle:"italic",padding:"4px 0"}},"No data logged"));
+    }
+
+    return e("div",{key:entry.d,style:{background:C.card,borderRadius:12,padding:"14px 16px",marginBottom:12,border:`1px solid ${C.bdr}`}},
+      e("div",{style:{display:"flex",alignItems:"baseline",justifyContent:"space-between",marginBottom:6}},
+        e("div",{style:{fontSize:17,fontWeight:700,color:C.teal}},fmtDate(entry.d)),
+        e("div",{style:{fontSize:11,color:C.dim,fontFamily:"monospace"}},entry.d)
+      ),
+      ...blocks
+    );
+  };
+
+  return e("div",{style:{padding:16}},
+    e("div",{style:{fontSize:14,color:C.dim,marginBottom:12}},"Last 7 days of activity"),
+    ...days.map(renderDay)
   );
 }
 
@@ -1991,6 +2218,8 @@ function App(){
   };
   const navSetTab=(newTab)=>{
     if(isPoppingRef.current){setTab(newTab);return}
+    // If tapping the same tab while a sub-view is open, close the sub-view
+    if(newTab===tab&&tab==="today"&&et){setEt(null);return}
     if(newTab!==tab){
       // If switching away from Today and a sub-view is open, close it first
       if(et)setEt(null);
@@ -2037,11 +2266,67 @@ function App(){
   useEffect(()=>{if(loaded)DB.set("today_"+todayStr(),td)},[td,loaded]);
   useEffect(()=>{if(loaded)DB.set("supps_"+todayStr(),supps)},[supps,loaded]);
 
+  // Accumulator: apply a meal's nutrition onto a td-like object and append to meals[].
+  // Used by both addMeal (today) and addMealToDate (past days).
+  const accumMeal=(p,m,ts)=>({
+    ...p,
+    cal:(p.cal||0)+(m.cal||0),
+    p:(p.p||0)+(m.p||0),
+    ep:(p.ep||0)+(m.ep||m.p||0),
+    ca:(p.ca||0)+(m.ca||0),
+    fi:(p.fi||0)+(m.fi||0),
+    as:(p.as||0)+(m.as||0),
+    su:(p.su||0)+(m.su||0),
+    fa:(p.fa||0)+(m.fa||0),
+    sf:(p.sf||0)+(m.sf||0),
+    na:(p.na||0)+(m.na||0),
+    k:(p.k||0)+(m.k||0),
+    cm:(p.cm||0)+(m.cm||0),
+    fl:(p.fl||0)+(m.fl||0),
+    meals:[...(p.meals||[]),{...m,t:ts}]
+  });
+
   const addMeal=m=>{
     if(m.cal!=null){
-      setTd(p=>({...p,cal:(p.cal||0)+(m.cal||0),p:(p.p||0)+(m.p||0),ep:(p.ep||0)+(m.ep||m.p||0),ca:(p.ca||0)+(m.ca||0),fi:(p.fi||0)+(m.fi||0),as:(p.as||0)+(m.as||0),su:(p.su||0)+(m.su||0),fa:(p.fa||0)+(m.fa||0),sf:(p.sf||0)+(m.sf||0),na:(p.na||0)+(m.na||0),k:(p.k||0)+(m.k||0),cm:(p.cm||0)+(m.cm||0),fl:(p.fl||0)+(m.fl||0),meals:[...(p.meals||[]),{...m,t:new Date().toISOString()}]}));
+      setTd(p=>accumMeal(p,m,new Date().toISOString()));
     }
   };
+
+  // Backdate a meal to a prior day. Handles three cases:
+  //   1. dateStr === today → delegate to addMeal (normal path)
+  //   2. dateStr is a pending ph_today_YYYY-MM-DD (not yet rolled over) → update that bucket
+  //   3. dateStr is already in history → update the matching history entry
+  //      (if the date is absent from history, create a new entry for it)
+  const addMealToDate=(dateStr,m)=>{
+    if(m.cal==null)return;
+    const today=todayStr();
+    if(dateStr===today){addMeal(m);return}
+    // Use noon of the backdated day as the meal timestamp so it lands on the right calendar day.
+    const ts=new Date(dateStr+"T12:00:00").toISOString();
+    // Case 2: pending day still in local bucket
+    const pending=LS.get("today_"+dateStr);
+    if(pending){
+      const next=accumMeal(pending,m,ts);
+      DB.set("today_"+dateStr,next);
+      return;
+    }
+    // Case 3: update history entry (or create one)
+    setHistory(prev=>{
+      const list=prev||[];
+      const idx=list.findIndex(h=>h.d===dateStr);
+      let next;
+      if(idx>=0){
+        const updated={...accumMeal(list[idx],m,ts),d:dateStr};
+        next=[...list];
+        next[idx]=updated;
+      }else{
+        next=[...list,{...accumMeal({},m,ts),d:dateStr}].sort((a,b)=>a.d.localeCompare(b.d));
+      }
+      DB.set("history",next);
+      return next;
+    });
+  };
+
   const addReading=r=>{/* readings stored with today data */};
 
   // Mark a supplement taken AND auto-log its associated meal (if any) AND
@@ -2063,7 +2348,7 @@ function App(){
     setSupps(p=>({...p,[id]:false}));
   };
 
-  const tabs=[{id:"today",l:"Today",i:"📊"},{id:"trends",l:"Trends",i:"📈"},{id:"alerts",l:"Alerts",i:"🔔"},{id:"protocol",l:"Protocol",i:"📋"},{id:"export",l:"Export",i:"📤"},{id:"settings",l:"Settings",i:"⚙️"}];
+  const tabs=[{id:"today",l:"Today",i:"📊"},{id:"history",l:"History",i:"📜"},{id:"trends",l:"Trends",i:"📈"},{id:"alerts",l:"Alerts",i:"🔔"},{id:"protocol",l:"Protocol",i:"📋"},{id:"export",l:"Export",i:"📤"},{id:"settings",l:"Settings",i:"⚙️"}];
 
   if(!loaded)return React.createElement("div",{style:{background:C.bg,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",color:C.teal}},"Loading...");
 
@@ -2080,7 +2365,8 @@ function App(){
     ),
     // Content
     React.createElement("div",{style:{flex:1,overflowY:"auto",paddingBottom:80}},
-      tab==="today"&&React.createElement(TodayTab,{data:td,setData:setTd,supps,setSupps,takeSupplement,untakeSupplement,addMeal,addReading,history,et,setEt:navSetEt}),
+      tab==="today"&&React.createElement(TodayTab,{data:td,setData:setTd,supps,setSupps,takeSupplement,untakeSupplement,addMeal,addMealToDate,addReading,history,et,setEt:navSetEt}),
+      tab==="history"&&React.createElement(HistoryTab,{data:td,history}),
       tab==="trends"&&React.createElement(TrendsTab,{history}),
       tab==="alerts"&&React.createElement(AlertsTab,{data:td}),
       tab==="protocol"&&React.createElement(ProtocolTab,{supps,setSupps,takeSupplement,untakeSupplement}),
