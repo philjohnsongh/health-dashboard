@@ -1631,23 +1631,48 @@ function HistoryTab({data,history}){
   const renderDay=(entry)=>{
     const blocks=[];
 
-    // ── Meals ─────────────────────────────────
+    // ── Meals (explicit foods/drinks) ─────────
     const meals=entry.meals||[];
     if(meals.length>0){
-      blocks.push(sectionHeader("🍽️",`Meals (${meals.length})`));
+      blocks.push(sectionHeader("🍽️",`Food & Drinks (${meals.length})`));
       meals.forEach((m,i)=>{
         const time=fmtTime(m.t);
-        blocks.push(e("div",{key:`m${i}`,style:{fontSize:14,color:C.txt,lineHeight:1.5,padding:"2px 0",display:"flex",gap:8,alignItems:"baseline"}},
+        // Build compact macro tail: cal, protein, fluid
+        const macros=[];
+        if(m.cal)macros.push(`${Math.round(m.cal)}cal`);
+        if(m.p)macros.push(`${Math.round(m.p)}p`);
+        if(m.fl)macros.push(`${Math.round(m.fl)}oz`);
+        blocks.push(e("div",{key:`m${i}`,style:{fontSize:14,color:C.txt,lineHeight:1.5,padding:"3px 0",display:"flex",gap:8,alignItems:"baseline"}},
           time&&e("span",{style:{color:C.dim,fontFamily:"monospace",fontSize:11,flexShrink:0,minWidth:60}},time),
           e("span",{style:{flex:1}},m.n||"Meal"),
-          e("span",{style:{color:C.dim,fontSize:12,flexShrink:0}},`${Math.round(m.cal||0)}cal`)
+          macros.length>0&&e("span",{style:{color:C.dim,fontSize:12,flexShrink:0}},macros.join(" · "))
         ));
+        if(m.note){
+          blocks.push(e("div",{key:`mn${i}`,style:{fontSize:11,color:C.dim,fontStyle:"italic",lineHeight:1.4,padding:"0 0 2px 68px"}},m.note));
+        }
       });
     }else if(entry.cal){
       blocks.push(sectionHeader("🍽️","Daily Totals"));
       blocks.push(e("div",{key:"mtot",style:{fontSize:13,color:C.txt,lineHeight:1.5,padding:"2px 0"}},
         `${Math.round(entry.cal)} cal · ${Math.round(entry.p||0)}g prot · ${Math.round(entry.ca||0)}g carb · ${Math.round(entry.fi||0)}g fib · Na ${Math.round(entry.na||0)}`
       ));
+    }
+
+    // ── Vitamins & Meds (supEvents) ───────────
+    const supEvents=entry.supEvents||[];
+    if(supEvents.length>0){
+      blocks.push(sectionHeader("💊",`Vitamins & Meds (${supEvents.length})`));
+      supEvents.forEach((s,i)=>{
+        const time=fmtTime(s.ts);
+        const itemsText=Array.isArray(s.items)?s.items.join(", "):(s.items||"");
+        blocks.push(e("div",{key:`sv${i}`,style:{fontSize:14,color:C.txt,lineHeight:1.5,padding:"3px 0",display:"flex",gap:8,alignItems:"baseline"}},
+          time&&e("span",{style:{color:C.dim,fontFamily:"monospace",fontSize:11,flexShrink:0,minWidth:60}},time),
+          e("span",{style:{flex:1}},s.name||"Supplement")
+        ));
+        if(itemsText){
+          blocks.push(e("div",{key:`svi${i}`,style:{fontSize:12,color:C.dim,lineHeight:1.4,padding:"0 0 2px 68px"}},itemsText));
+        }
+      });
     }
 
     // ── Sleep ─────────────────────────────────
