@@ -1882,6 +1882,52 @@ function ExportTab({data,history}){
 // ============================================================
 // AI CHAT
 // ============================================================
+// Compact one-line summary for a day entry (used for 64-day history)
+function compactDay(d){
+  if(!d)return "";
+  const parts=[d.d];
+  if(d.cal)parts.push(`cal${Math.round(d.cal)}`);
+  if(d.p)parts.push(`p${Math.round(d.p)}`);
+  if(d.ca)parts.push(`c${Math.round(d.ca)}`);
+  if(d.fi)parts.push(`fib${Math.round(d.fi)}`);
+  if(d.as)parts.push(`sug${Math.round(d.as)}`);
+  if(d.na)parts.push(`na${Math.round(d.na)}`);
+  if(d.k)parts.push(`k${Math.round(d.k)}`);
+  if(d.g)parts.push(`g${d.g}`);
+  if(d.bs&&d.bd)parts.push(`bp${d.bs}/${d.bd}`);
+  if(d.sl)parts.push(`sl${d.sl}h`);
+  if(d.ss)parts.push(`ss${d.ss}`);
+  if(d.st)parts.push(`st${d.st}`);
+  if(d.wt)parts.push(`wt${d.wt}`);
+  if(d.al)parts.push(`al${d.al}`);
+  if(d.ex)parts.push("ex");
+  if(d.vl)parts.push(`vl${d.vl}`);
+  if(d.nt)parts.push(`"${String(d.nt).slice(0,40)}"`);
+  return parts.join(" ");
+}
+
+// Build rich context for AI chat: all history compact + recent days full detail + profile + targets
+function buildAskContext(data,history){
+  const prof=DB.get("profile")||DEFAULT_PROFILE;
+  const targetsStr=`Targets: cal ${TARGETS.cal.rest}-${TARGETS.cal.ex}, prot ${TARGETS.prot.min}-${TARGETS.prot.max}g, carbs ≥${TARGETS.carbs.min}g, fiber ≥${TARGETS.fib.min}g, added-sugar ≤${TARGETS.as.max}g, sodium ≤${TARGETS.na.max}mg, potassium ≥${TARGETS.k.min}mg.`;
+  const hist=Array.isArray(history)?history.slice().sort((a,b)=>(a.d||"").localeCompare(b.d||"")):[];
+  const compact=hist.map(compactDay).filter(Boolean).join("\n");
+  const recent=hist.slice(-7);
+  const fullBlocks=recent.map(d=>{
+    const L=[`=== ${d.d} ===`];
+    L.push(`totals: ${compactDay(d).replace(d.d+" ","")}`);
+    if(d.meals&&d.meals.length)L.push(`meals(${d.meals.length}): `+d.meals.map(m=>`[${m.t||"?"}] ${m.n||"?"}${m.cal?` ${Math.round(m.cal)}cal`:""}${m.p?`/${Math.round(m.p)}p`:""}${m.ca?`/${Math.round(m.ca)}c`:""}${m.fi?`/${Math.round(m.fi)}fib`:""}${m.as?`/${Math.round(m.as)}sug`:""}${m.na?`/${Math.round(m.na)}na`:""}${m.note?` (${m.note})`:""}`).join(" | "));
+    if(d.gReadings&&d.gReadings.length)L.push(`glucose(${d.gReadings.length}): `+d.gReadings.map(g=>`[${g.t||"?"}] ${g.v}${g.fasting?"F":""}${g.ctx?` ${g.ctx}`:""}`).join(" | "));
+    if(d.bpReadings&&d.bpReadings.length)L.push(`bp(${d.bpReadings.length}): `+d.bpReadings.map(b=>`[${b.t||"?"}] ${b.s}/${b.d}${b.p?` p${b.p}`:""}${b.rested?" rest":""}`).join(" | "));
+    if(d.exLog&&d.exLog.length)L.push(`ex(${d.exLog.length}): `+d.exLog.map(x=>`[${x.t||"?"}] ${x.n||"?"}${x.dur?` ${x.dur}m`:""}${x.dist?` ${x.dist}`:""}${x.hr?` hr${x.hr}`:""}${x.zone?` z${x.zone}`:""}`).join(" | "));
+    if(d.stReadings&&d.stReadings.length)L.push(`stress(${d.stReadings.length}): `+d.stReadings.map(s=>`[${s.t||"?"}] ${s.v}${s.ctx?` ${s.ctx}`:""}`).join(" | "));
+    if(d.supEvents&&d.supEvents.length)L.push(`supps(${d.supEvents.length}): `+d.supEvents.map(s=>`[${s.ts?fmtTime(s.ts):"?"}] ${s.name||"?"}${Array.isArray(s.items)&&s.items.length?` (${s.items.join(", ")})`:""}`).join(" | "));
+    return L.join("\n");
+  }).join("\n\n");
+  const todayStr=`TODAY running totals: cal ${data.cal||0}, prot ${data.p||0}g, carbs ${data.ca||0}g, fib ${data.fi||0}g, sug ${data.as||0}g, na ${data.na||0}mg, k ${data.k||0}mg, glu ${data.g||"?"}, sl ${data.sl||"?"}h, st ${data.st||"?"}, al ${data.al||0}, ex ${data.ex?"yes":"no"}.`;
+  return {prof,targetsStr,compact,fullBlocks,todayStr,nDays:hist.length};
+}
+
 function ChatDrawer({open,onClose,data,history}){
   const [msgs,setMsgs]=useState([]);
   const [inp,setInp]=useState("");
@@ -1897,10 +1943,11 @@ function ChatDrawer({open,onClose,data,history}){
     if(!key){setNeedKey(true);return}
     const userMsg=inp.trim();setInp("");
     setMsgs(p=>[...p,{role:"user",content:userMsg}]);setLoading(true);
-    const ctx=`Today: Cal ${data.cal||0}, Prot ${data.p||0}g, Carbs ${data.ca||0}g, Fiber ${data.fi||0}g, Sugar ${data.as||0}g, Na ${data.na||0}mg, K ${data.k||0}mg, Glucose ${data.g||"?"}, Sleep ${data.sl||"?"}hr, Stress ${data.st||"?"}, Alcohol ${data.al||0}, Exercise ${data.ex?"yes":"no"}. Recent glucose: ${history.slice(-7).filter(d=>d.g).map(d=>fmtD(d.d)+":"+d.g).join(", ")}.`;
+    const ctx=buildAskContext(data,history);
+    const systemPrompt=`You are Phil's personal health assistant with access to his daily tracking data.\n\nPROFILE:\n${ctx.prof}\n\n${ctx.targetsStr}\n\nDATA KEYS (compact history lines): d=date, cal=kcal, p=protein g, c=carbs g, fib=fiber g, sug=added sugar g, na=sodium mg, k=potassium mg, g=fasting/avg glucose, bp=systolic/diastolic, sl=sleep hours, ss=sleep score, st=stress 1-5, wt=weight lb, al=alcohol units, ex=exercised, vl=vitality 1-5. For last 7 days you also have per-item meals, glucose readings, BP readings, exercise log, stress readings, and supplement events.\n\n${ctx.todayStr}\n\nHISTORY (${ctx.nDays} days, compact):\n${ctx.compact}\n\nLAST 7 DAYS (full detail):\n${ctx.fullBlocks}\n\nBe concise, specific, and ground answers in the actual data above. When the user asks about trends, compute from the compact history. When asked about specific recent meals/exercises/readings, use the last-7-days detail. If data is missing for what they asked, say so.`;
     try{
       const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
-        body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,system:`You are a health assistant. ${DB.get("profile")||DEFAULT_PROFILE}\n\nCurrent:\n${ctx}\n\nBe concise, specific to the user's protocol.`,
+        body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1200,system:systemPrompt,
           messages:[...msgs.map(m=>({role:m.role,content:m.content})),{role:"user",content:userMsg}]})});
       const d=await r.json();
       if(d.error){setMsgs(p=>[...p,{role:"assistant",content:`Error: ${d.error.message}`}])}
