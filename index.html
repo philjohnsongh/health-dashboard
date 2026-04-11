@@ -440,7 +440,7 @@ function Metric({label,value,unit,target,isMax,color,sub}){
 }
 
 function SuppCard({s,done,onTap,expanded}){
-  return React.createElement("div",{onClick:onTap,style:{background:done?C.card2:(expanded?C.amber+"15":C.card),borderRadius:14,padding:"12px 14px",border:`${expanded?2:1}px solid ${done?C.grn+"60":(expanded?C.amber:C.bdr)}`,cursor:"pointer",opacity:done?0.65:1,display:"flex",flexDirection:"column"}},
+  return React.createElement("div",{onClick:onTap,style:{background:done?C.card2:(expanded?C.amber+"15":C.card),borderRadius:14,padding:"12px 14px",border:`${expanded?2:1}px solid ${done?C.grn+"60":(expanded?C.amber:C.bdr)}`,cursor:"pointer",opacity:done?0.65:1,display:"flex",flexDirection:"column",minHeight:94,boxSizing:"border-box"}},
     React.createElement("div",{style:{fontSize:17,fontWeight:600,color:done?C.dim:C.txt,marginBottom:4,display:"flex",alignItems:"baseline",gap:6,lineHeight:1.2}},
       React.createElement("span",{style:{fontSize:15}},done?"✓":s.icon),
       s.name
@@ -951,7 +951,7 @@ function TodayTab({data,setData,supps,setSupps,takeSupplement,untakeSupplement,a
         React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}},
           btnData.map(([k,l,v])=>{
             const active=et===k;
-            return React.createElement("button",{key:k,onClick:()=>setEt(active?null:k),style:{background:active?C.teal:C.card,color:active?"#fff":C.txt,border:`1px solid ${active?C.teal:C.bdr}`,borderRadius:14,padding:"12px 14px",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"flex-start",textAlign:"left"}},
+            return React.createElement("button",{key:k,onClick:()=>setEt(active?null:k),style:{background:active?C.teal:C.card,color:active?"#fff":C.txt,border:`1px solid ${active?C.teal:C.bdr}`,borderRadius:14,padding:"12px 14px",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"flex-start",textAlign:"left",minHeight:94,boxSizing:"border-box"}},
               React.createElement("div",{style:{fontSize:17,fontWeight:600,marginBottom:4}},l),
               React.createElement("div",{style:{fontSize:26,fontWeight:700,fontFamily:"monospace",color:active?"#fff":C.teal}},v),
               React.createElement("div",{style:{height:4,width:"100%",background:active?"rgba(255,255,255,0.25)":C.card2,borderRadius:2,marginTop:6}})
